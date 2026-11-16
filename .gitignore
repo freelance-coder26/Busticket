@@ -1,0 +1,8 @@
+# Racine du projet
+docs/
+doc/
+.env
+.env.*
+!.env.example
+.DS_Store
+Thumbs.db

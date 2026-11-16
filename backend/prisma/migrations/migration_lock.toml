@@ -1,0 +1,2 @@
+# Le fournisseur reste identique entre les migrations de ce projet.
+provider = "postgresql"

@@ -1,0 +1,261 @@
+// Le schéma place le transporteur sur chaque donnée métier pour rendre le cloisonnement explicite.
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN_PLATEFORME
+  TRANSPORTEUR
+  GESTIONNAIRE
+  RECEVEUR
+  CONTROLEUR
+}
+
+enum Direction {
+  ALLER
+  RETOUR
+}
+
+enum ServiceStatus {
+  OUVERT
+  TERMINE
+}
+
+model Transporteur {
+  id            String              @id @default(uuid()) @db.Uuid
+  nom           String
+  actif         Boolean             @default(true)
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  utilisateurs  Utilisateur[]
+  bus           Bus[]
+  lignes        Ligne[]
+  reperes       Repere[]
+  tarifs        TarifTransporteur[]
+  appareils     Appareil[]
+  services      Service[]
+  ventes        Vente[]
+  annulations   Annulation[]
+  journalAudit  JournalAudit[]
+  jetonsRefresh JetonRefresh[]
+
+  @@index([actif])
+}
+
+model Utilisateur {
+  id                 String              @id @default(uuid()) @db.Uuid
+  transporteurId     String?             @db.Uuid
+  login              String
+  telephone          String?
+  nom                String
+  motDePasseHash     String
+  role               Role
+  actif              Boolean             @default(true)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  transporteur       Transporteur?       @relation(fields: [transporteurId], references: [id], onDelete: Restrict)
+  services           Service[]           @relation("ReceveurService")
+  ventes             Vente[]             @relation("ReceveurVente")
+  annulations        Annulation[]        @relation("AuteurAnnulation")
+  audits             JournalAudit[]      @relation("AuteurAudit")
+  jetonsRefresh      JetonRefresh[]
+  appareilsAttribues Appareil[]          @relation("ReceveurAppareil")
+  tarifsCrees        TarifTransporteur[] @relation("AuteurTarif")
+
+  @@unique([transporteurId, login])
+  @@index([transporteurId, role, actif])
+  @@index([telephone])
+}
+
+model Bus {
+  id                  String       @id @default(uuid()) @db.Uuid
+  transporteurId      String       @db.Uuid
+  code                String
+  nom                 String
+  actif               Boolean      @default(true)
+  versementAttenduGnf Int?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+  transporteur        Transporteur @relation(fields: [transporteurId], references: [id], onDelete: Restrict)
+  services            Service[]
+
+  @@unique([transporteurId, code])
+  @@index([transporteurId, actif])
+}
+
+model Ligne {
+  id             String       @id @default(uuid()) @db.Uuid
+  transporteurId String       @db.Uuid
+  nom            String
+  actif          Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  transporteur   Transporteur @relation(fields: [transporteurId], references: [id], onDelete: Restrict)
+  reperes        Repere[]
+  services       Service[]
+
+  @@unique([transporteurId, nom])
+  @@index([transporteurId, actif])
+}
+
+model Repere {
+  id             String       @id @default(uuid()) @db.Uuid
+  transporteurId String       @db.Uuid
+  ligneId        String       @db.Uuid
+  nom            String
+  position       Int
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  ligne          Ligne        @relation(fields: [ligneId], references: [id], onDelete: Restrict)
+  transporteur   Transporteur @relation(fields: [transporteurId], references: [id], onDelete: Restrict)
+
+  @@unique([transporteurId, ligneId, position])
+  @@unique([transporteurId, ligneId, nom])
+  @@index([transporteurId, ligneId])
+}
+
+model TarifTransporteur {
+  id             String       @id @default(uuid()) @db.Uuid
+  transporteurId String       @db.Uuid
+  montantGnf     Int
+  dateEffet      DateTime
+  createdById    String?      @db.Uuid
+  createdAt      DateTime     @default(now())
+  transporteur   Transporteur @relation(fields: [transporteurId], references: [id], onDelete: Restrict)
+  createdBy      Utilisateur? @relation("AuteurTarif", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@unique([transporteurId, dateEffet])
+  @@index([transporteurId, dateEffet])
+}
+
+model Appareil {
+  id             String       @id @default(uuid()) @db.Uuid
+  transporteurId String       @db.Uuid
+  prefixeTicket  String
+  nom            String
+  actif          Boolean      @default(true)
+  receveurId     String?      @db.Uuid
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  transporteur   Transporteur @relation(fields: [transporteurId], references: [id], onDelete: Restrict)
+  receveur       Utilisateur? @relation("ReceveurAppareil", fields: [receveurId], references: [id], onDelete: SetNull)
+  services       Service[]
+  ventes         Vente[]
+
+  @@unique([transporteurId, prefixeTicket])
+  @@index([transporteurId, actif])
+}
+
+model Service {
+  id                       String        @id @default(uuid()) @db.Uuid
+  transporteurId           String        @db.Uuid
+  receveurId               String        @db.Uuid
+  busId                    String        @db.Uuid
+  ligneId                  String        @db.Uuid
+  appareilId               String?       @db.Uuid
+  sens                     Direction
+  ligneNomSnapshot         String
+  busCodeSnapshot          String
+  reperesSnapshot          Json
+  tarifUnitaireGnfSnapshot Int?
+  statut                   ServiceStatus @default(OUVERT)
+  debutAt                  DateTime      @default(now())
+  finAt                    DateTime?
+  createdAt                DateTime      @default(now())
+  updatedAt                DateTime      @updatedAt
+  transporteur             Transporteur  @relation(fields: [transporteurId], references: [id], onDelete: Restrict)
+  receveur                 Utilisateur   @relation("ReceveurService", fields: [receveurId], references: [id], onDelete: Restrict)
+  bus                      Bus           @relation(fields: [busId], references: [id], onDelete: Restrict)
+  ligne                    Ligne         @relation(fields: [ligneId], references: [id], onDelete: Restrict)
+  appareil                 Appareil?     @relation(fields: [appareilId], references: [id], onDelete: SetNull)
+  ventes                   Vente[]
+
+  @@index([transporteurId, debutAt])
+  @@index([transporteurId, receveurId, statut])
+}
+
+model Vente {
+  id                  String       @id @default(uuid()) @db.Uuid
+  transporteurId      String       @db.Uuid
+  clientVenteId       String       @db.Uuid
+  numeroTicket        String
+  ligneNom            String
+  busCode             String
+  receveurNom         String
+  monteeNom           String
+  destinationNom      String
+  serviceId           String       @db.Uuid
+  receveurId          String       @db.Uuid
+  appareilId          String       @db.Uuid
+  monteeRepereId      String       @db.Uuid
+  destinationRepereId String       @db.Uuid
+  sens                Direction
+  troncons            Int
+  prixUnitaireGnf     Int
+  montantGnf          Int
+  vendueAtClient      DateTime
+  recueAtServeur      DateTime     @default(now())
+  duplicataCount      Int          @default(0)
+  transporteur        Transporteur @relation(fields: [transporteurId], references: [id], onDelete: Restrict)
+  service             Service      @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  receveur            Utilisateur  @relation("ReceveurVente", fields: [receveurId], references: [id], onDelete: Restrict)
+  appareil            Appareil     @relation(fields: [appareilId], references: [id], onDelete: Restrict)
+  annulation          Annulation?
+
+  @@unique([transporteurId, clientVenteId])
+  @@unique([transporteurId, numeroTicket])
+  @@index([transporteurId, recueAtServeur])
+  @@index([transporteurId, serviceId])
+  @@index([transporteurId, receveurId, vendueAtClient])
+}
+
+model Annulation {
+  id             String       @id @default(uuid()) @db.Uuid
+  transporteurId String       @db.Uuid
+  venteId        String       @unique @db.Uuid
+  auteurId       String       @db.Uuid
+  motif          String
+  annuleeAt      DateTime     @default(now())
+  transporteur   Transporteur @relation(fields: [transporteurId], references: [id], onDelete: Restrict)
+  vente          Vente        @relation(fields: [venteId], references: [id], onDelete: Restrict)
+  auteur         Utilisateur  @relation("AuteurAnnulation", fields: [auteurId], references: [id], onDelete: Restrict)
+
+  @@index([transporteurId, annuleeAt])
+  @@index([transporteurId, auteurId, annuleeAt])
+}
+
+model JournalAudit {
+  id             String       @id @default(uuid()) @db.Uuid
+  transporteurId String       @db.Uuid
+  acteurId       String?      @db.Uuid
+  action         String
+  entite         String
+  entiteId       String?
+  avant          Json?
+  apres          Json?
+  createdAt      DateTime     @default(now())
+  transporteur   Transporteur @relation(fields: [transporteurId], references: [id], onDelete: Restrict)
+  acteur         Utilisateur? @relation("AuteurAudit", fields: [acteurId], references: [id], onDelete: SetNull)
+
+  @@index([transporteurId, createdAt])
+  @@index([transporteurId, entite, entiteId])
+}
+
+model JetonRefresh {
+  id             String        @id @default(uuid()) @db.Uuid
+  transporteurId String?       @db.Uuid
+  utilisateurId  String        @db.Uuid
+  empreinte      String        @unique
+  expireAt       DateTime
+  revoqueAt      DateTime?
+  createdAt      DateTime      @default(now())
+  transporteur   Transporteur? @relation(fields: [transporteurId], references: [id], onDelete: Cascade)
+  utilisateur    Utilisateur   @relation(fields: [utilisateurId], references: [id], onDelete: Cascade)
+
+  @@index([transporteurId, utilisateurId, expireAt])
+}
