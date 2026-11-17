@@ -90,3 +90,30 @@ export async function apiRequest(path, { method = "GET", body, retry = true } = 
   }
   return payload;
 }
+
+export async function apiDownload(path, { retry = true } = {}) {
+  let session = getSession();
+  let response = await fetch(`${API_BASE}${path}`, {
+    headers: session?.accessToken ? { authorization: `Bearer ${session.accessToken}` } : {},
+  });
+
+  if (response.status === 401 && retry && session?.refreshToken && !path.startsWith("/auth/")) {
+    session = await renewSession(session);
+    if (session) {
+      response = await fetch(`${API_BASE}${path}`, {
+        headers: { authorization: `Bearer ${session.accessToken}` },
+      });
+    } else {
+      clearSession();
+    }
+  }
+
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    const error = new Error(payload.erreur || `Erreur HTTP ${response.status}`);
+    error.code = payload.code;
+    error.status = response.status;
+    throw error;
+  }
+  return response.blob();
+}

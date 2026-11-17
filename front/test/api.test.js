@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
-import { apiRequest, getSession, setSession } from "../services/api.js";
+import { apiDownload, apiRequest, getSession, setSession } from "../services/api.js";
 
 const originalWindow = globalThis.window;
 const originalFetch = globalThis.fetch;
@@ -83,5 +83,29 @@ test("shares one refresh request between concurrent API requests", async () => {
   ]);
   assert.deepEqual(results, [{ ok: true }, { ok: true }]);
   assert.equal(refreshRequests, 1);
+  assert.equal(getSession().refreshToken, "new-refresh-token");
+});
+
+test("downloads protected exports after refreshing an expired access token", async () => {
+  installSession(session);
+  let downloadRequests = 0;
+  globalThis.fetch = async (url) => {
+    if (url.endsWith("/auth/refresh")) {
+      return jsonResponse(200, {
+        accessToken: "new-access-token",
+        refreshToken: "new-refresh-token",
+      });
+    }
+    downloadRequests += 1;
+    if (downloadRequests === 1) return jsonResponse(401);
+    return {
+      ok: true,
+      status: 200,
+      blob: async () => "export-data",
+    };
+  };
+
+  assert.equal(await apiDownload("/ventes/export?format=csv"), "export-data");
+  assert.equal(downloadRequests, 2);
   assert.equal(getSession().refreshToken, "new-refresh-token");
 });

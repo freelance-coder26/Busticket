@@ -40,10 +40,11 @@ function tenantId(request) {
 
 // Les événements d'audit sont écrits dans la même transaction que la modification métier.
 async function auditedUpdate(transaction, request, entity, entityId, before, after) {
+  const verb = before === null ? "CREE" : after === null ? "SUPPRIME" : "MODIFIE";
   await writeAudit(transaction, {
     transporteurId: request.user.transporteurId,
     acteurId: request.user.id,
-    action: `${entity.toUpperCase()}_MODIFIE`,
+    action: `${entity.toUpperCase()}_${verb}`,
     entite: entity,
     entiteId: entityId,
     avant: before,
@@ -125,8 +126,11 @@ router.post("/bus", authenticate, authorize("bus"), async (request, response) =>
     nom: nomSchema,
     versementAttenduGnf: montantSchema.nullable().optional(),
   }).strict(), request.body);
-  const bus = await prisma.bus.create({
-    data: { transporteurId: tenantId(request), ...input },
+  const tenant = tenantId(request);
+  const bus = await prisma.$transaction(async (transaction) => {
+    const created = await transaction.bus.create({ data: { transporteurId: tenant, ...input } });
+    await auditedUpdate(transaction, request, "Bus", created.id, null, created);
+    return created;
   });
   response.status(201).json({ bus });
 });
@@ -347,7 +351,15 @@ router.patch("/utilisateurs/:id", authenticate, authorize("utilisateurs"), async
       },
       select: { id: true, login: true, telephone: true, nom: true, role: true, actif: true },
     });
-    await auditedUpdate(transaction, request, "Utilisateur", id, before, updated);
+    await writeAudit(transaction, {
+      transporteurId: tenant,
+      acteurId: request.user.id,
+      action: "UTILISATEUR_MODIFIE",
+      entite: "Utilisateur",
+      entiteId: id,
+      avant: before,
+      apres: { ...updated, motDePasseModifie: Boolean(motDePasse) },
+    });
     return updated;
   });
   response.json({ utilisateur: user });
@@ -375,7 +387,11 @@ router.post("/appareils", authenticate, authorize("appareils"), async (request, 
   }))) {
     throw new HttpError(400, "Le receveur attribué est introuvable ou inactif.", "RECEVEUR_INVALIDE");
   }
-  const device = await prisma.appareil.create({ data: { ...input, transporteurId: tenant } });
+  const device = await prisma.$transaction(async (transaction) => {
+    const created = await transaction.appareil.create({ data: { ...input, transporteurId: tenant } });
+    await auditedUpdate(transaction, request, "Appareil", created.id, null, created);
+    return created;
+  });
   response.status(201).json({ appareil: device });
 });
 router.patch("/appareils/:id", authenticate, authorize("appareils"), async (request, response) => {
@@ -464,20 +480,24 @@ router.post("/services", authenticate, authorize("services"), async (request, re
     where: { transporteurId: tenant, dateEffet: { lte: debutAt } },
     orderBy: { dateEffet: "desc" },
   });
-  const service = await prisma.service.create({
-    data: {
-      transporteurId: tenant,
-      receveurId: receiverId,
-      busId: bus.id,
-      ligneId: line.id,
-      appareilId: device?.id,
-      sens: input.sens,
-      debutAt,
-      ligneNomSnapshot: line.nom,
-      busCodeSnapshot: bus.code,
-      reperesSnapshot: line.reperes.map(({ id: stopId, nom, position }) => ({ id: stopId, nom, position })),
-      tarifUnitaireGnfSnapshot: tariff?.montantGnf ?? DEFAULT_FARE_GNF,
-    },
+  const service = await prisma.$transaction(async (transaction) => {
+    const created = await transaction.service.create({
+      data: {
+        transporteurId: tenant,
+        receveurId: receiverId,
+        busId: bus.id,
+        ligneId: line.id,
+        appareilId: device?.id,
+        sens: input.sens,
+        debutAt,
+        ligneNomSnapshot: line.nom,
+        busCodeSnapshot: bus.code,
+        reperesSnapshot: line.reperes.map(({ id: stopId, nom, position }) => ({ id: stopId, nom, position })),
+        tarifUnitaireGnfSnapshot: tariff?.montantGnf ?? DEFAULT_FARE_GNF,
+      },
+    });
+    await auditedUpdate(transaction, request, "Service", created.id, null, created);
+    return created;
   });
   response.status(201).json({ service });
 });

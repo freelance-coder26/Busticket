@@ -1,6 +1,10 @@
+"use client";
+
+import { useState } from "react";
 import { formatGnf } from "../../../../shared/admin-utils.js";
+import { downloadSalesExport } from "../admin.api";
 import { Button, Empty, Field, Panel, PanelTitle, PageHeading, Table } from "../admin-ui";
-import type { Bus, Report, Service } from "../types";
+import type { Bus, Report, ReportGroup, Service } from "../types";
 
 type DashboardProps = {
   report?: Report;
@@ -12,8 +16,27 @@ type DashboardProps = {
   setFrom: (value: string) => void;
   setTo: (value: string) => void;
   refresh: () => void;
+  setError: (message: string) => void;
   loading: boolean;
 };
+
+function BreakdownPanel({ title, rows, label }: { title: string; rows: ReportGroup[]; label: string }) {
+  return (
+    <Panel>
+      <PanelTitle title={title} count={rows.length} />
+      {!rows.length ? <Empty>Aucune donnée sur la période choisie.</Empty> : (
+        <Table>
+          <thead><tr><th>{label}</th><th>TICKETS</th><th>RECETTES NETTES</th></tr></thead>
+          <tbody>{rows.map((row) => <tr key={row.cle}>
+            <td><strong>{row.cle}</strong></td>
+            <td>{row.tickets.toLocaleString("fr-FR")}</td>
+            <td>{formatGnf(row.recettesGnf)}</td>
+          </tr>)}</tbody>
+        </Table>
+      )}
+    </Panel>
+  );
+}
 
 function StatCard({ label, value, note, icon, tone }: {
   label: string;
@@ -41,11 +64,43 @@ export default function Dashboard({
   setFrom,
   setTo,
   refresh,
+  setError,
   loading,
 }: DashboardProps) {
+  const [exportingFormat, setExportingFormat] = useState<"csv" | "excel" | null>(null);
   const total = report?.total;
   const busCount = buses?.length ?? 0;
   const currentServices = services?.filter((service) => service.statut === "OUVERT").length ?? 0;
+  const busBreakdown = new Map((report?.parBus ?? []).map((row) => [row.cle, {
+    ...row,
+    versementAttenduGnf: 0,
+    ecartGnf: 0,
+  }]));
+  for (const variance of report?.ecartsParBus ?? []) {
+    const current = busBreakdown.get(variance.busCode) ?? {
+      cle: variance.busCode,
+      tickets: 0,
+      recettesGnf: 0,
+      versementAttenduGnf: 0,
+      ecartGnf: 0,
+    };
+    busBreakdown.set(variance.busCode, {
+      ...current,
+      versementAttenduGnf: variance.versementAttenduGnf,
+      ecartGnf: variance.ecartGnf,
+    });
+  }
+
+  async function exportSales(format: "csv" | "excel") {
+    setExportingFormat(format);
+    try {
+      await downloadSalesExport(from, to, format);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "L’export a échoué.");
+    } finally {
+      setExportingFormat(null);
+    }
+  }
 
   return (
     <>
@@ -55,6 +110,12 @@ export default function Dashboard({
         <Field label="Du" type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
         <Field label="Au" type="date" value={to} onChange={(event) => setTo(event.target.value)} />
         <Button variant="quiet" onClick={refresh} disabled={loading}>Actualiser ↻</Button>
+        <Button variant="quiet" onClick={() => void exportSales("csv")} disabled={loading || exportingFormat !== null}>
+          {exportingFormat === "csv" ? "Export CSV…" : "Exporter CSV"}
+        </Button>
+        <Button variant="quiet" onClick={() => void exportSales("excel")} disabled={loading || exportingFormat !== null}>
+          {exportingFormat === "excel" ? "Export Excel…" : "Exporter Excel"}
+        </Button>
       </Panel>
       {!report ? <Panel><Empty>{loading ? "Chargement des indicateurs…" : "Les indicateurs ne sont pas disponibles."}</Empty></Panel> : (
         <>
@@ -84,9 +145,21 @@ export default function Dashboard({
               <p className="summary-footnote">Les ventes annulées sont exclues des recettes. Les rapports restent filtrés sur votre transporteur.</p>
             </Panel>
           </div>
-          <Panel><PanelTitle title="Écart de versement par bus" count={report.ecartsParBus?.length ?? 0} />
-            {!report.ecartsParBus?.length ? <Empty>Aucun versement attendu n’est configuré.</Empty> : <Table><thead><tr><th>BUS</th><th>RECETTES</th><th>VERSEMENT ATTENDU</th><th>ÉCART</th></tr></thead><tbody>{report.ecartsParBus.map((bus) => <tr key={bus.busCode}><td><strong>{bus.busCode}</strong></td><td>{formatGnf(bus.recettesGnf)}</td><td>{formatGnf(bus.versementAttenduGnf)}</td><td><strong className={bus.ecartGnf < 0 ? "negative" : "positive"}>{formatGnf(bus.ecartGnf)}</strong></td></tr>)}</tbody></Table>}
+          <Panel><PanelTitle title="Détail des recettes par bus" count={busBreakdown.size} />
+            {!busBreakdown.size ? <Empty>Aucune recette sur la période choisie.</Empty> : <Table><thead><tr><th>BUS</th><th>TICKETS</th><th>RECETTES NETTES</th><th>VERSEMENT ATTENDU</th><th>ÉCART</th></tr></thead><tbody>{[...busBreakdown.values()].sort((a, b) => a.cle.localeCompare(b.cle)).map((bus) => <tr key={bus.cle}><td><strong>{bus.cle}</strong></td><td>{bus.tickets}</td><td>{formatGnf(bus.recettesGnf)}</td><td>{bus.versementAttenduGnf ? formatGnf(bus.versementAttenduGnf) : "—"}</td><td><strong className={bus.ecartGnf < 0 ? "negative" : "positive"}>{bus.versementAttenduGnf ? formatGnf(bus.ecartGnf) : "—"}</strong></td></tr>)}</tbody></Table>}
           </Panel>
+          <div className="dashboard-breakdowns">
+            <BreakdownPanel title="Recettes par ligne" rows={report.parLigne ?? []} label="LIGNE" />
+            <BreakdownPanel title="Recettes par receveur" rows={report.parReceveur ?? []} label="RECEVEUR" />
+            <Panel>
+              <PanelTitle title="Annulations par receveur" count={report.annulationsParReceveur?.length ?? 0} />
+              {!report.annulationsParReceveur?.length ? <Empty>Aucune annulation sur la période choisie.</Empty> : (
+                <Table><thead><tr><th>RECEVEUR</th><th>VENTES ANNULÉES</th></tr></thead>
+                  <tbody>{report.annulationsParReceveur.map((row) => <tr key={row.receveur}><td><strong>{row.receveur}</strong></td><td>{row.annulations}</td></tr>)}</tbody>
+                </Table>
+              )}
+            </Panel>
+          </div>
         </>
       )}
     </>

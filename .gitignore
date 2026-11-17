@@ -1,5 +1,11 @@
 # Racine du projet
 docs/
+!docs/
+docs/*
+!docs/api.md
+!docs/guide-receveur.md
+!docs/guide-transporteur.md
+!docs/deploiement-et-sauvegardes.md
 doc/
 .env
 .env.*

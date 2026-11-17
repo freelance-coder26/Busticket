@@ -7,3 +7,4 @@ export function apiRequest<T extends ApiResponse = ApiResponse>(
   path: string,
   options?: { method?: string; body?: unknown; retry?: boolean },
 ): Promise<T>;
+export function apiDownload(path: string, options?: { retry?: boolean }): Promise<Blob>;

@@ -406,6 +406,7 @@ export default function AdminApp() {
               setFrom={setSalesFrom}
               setTo={setSalesTo}
               refresh={() => void loadPage("dashboard", salesFrom, salesTo)}
+              setError={setError}
               loading={loading}
             />
           )}

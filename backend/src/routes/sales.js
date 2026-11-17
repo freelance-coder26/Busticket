@@ -7,6 +7,7 @@ import { authorize } from "../middleware/authorize.js";
 import { writeAudit } from "../services/audit.js";
 import { matchesSale, synchronizeSale } from "../services/sales.js";
 import { HttpError } from "../utils/http-error.js";
+import { toCsv, toExcelXml } from "../utils/tabular-export.js";
 import { idSchema, parseBody } from "../utils/validation.js";
 import { parseDateRange } from "../utils/date-range.js";
 
@@ -138,6 +139,72 @@ router.get("/ventes", authenticate, authorize("ventesLecture"), async (request, 
     }),
   ]);
   response.json({ page, limite: pageSize, total, ventes });
+});
+
+// L'export inclut les ventes annulées pour traçabilité, avec un indicateur qui les exclut des recettes.
+router.get("/ventes/export", authenticate, authorize("ventesLecture"), async (request, response) => {
+  if (!request.user.transporteurId) {
+    throw new HttpError(403, "Cette opération exige un compte transporteur.", "TENANT_REQUIS");
+  }
+  const range = parseDateRange(request.query);
+  if (!range || request.query.du === undefined || request.query.au === undefined) {
+    throw new HttpError(400, "Une période valide du/au au format AAAA-MM-JJ est obligatoire.", "PERIODE_INVALIDE");
+  }
+  if (request.query.format !== "csv" && request.query.format !== "excel") {
+    throw new HttpError(400, "Le format doit être csv ou excel.", "FORMAT_INVALIDE");
+  }
+  const serviceFilter = {
+    ...(request.query.busId ? { busId: parseBody(idSchema, request.query.busId) } : {}),
+    ...(request.query.ligneId ? { ligneId: parseBody(idSchema, request.query.ligneId) } : {}),
+  };
+  const where = {
+    transporteurId: request.user.transporteurId,
+    vendueAtClient: { gte: range.start, lt: range.end },
+    ...(request.user.role === "RECEVEUR"
+      ? { receveurId: request.user.id }
+      : request.query.receveurId
+        ? { receveurId: parseBody(idSchema, request.query.receveurId) }
+        : {}),
+    ...(Object.keys(serviceFilter).length ? { service: serviceFilter } : {}),
+  };
+  const sales = await prisma.vente.findMany({
+    where,
+    include: { annulation: true },
+    orderBy: { vendueAtClient: "asc" },
+  });
+  const headers = [
+    "Ticket", "Date de vente", "Ligne", "Bus", "Receveur", "Montée", "Destination",
+    "Tronçons", "Tarif unitaire GNF", "Montant GNF", "Statut", "Comptée dans les recettes",
+    "Motif annulation", "Date annulation",
+  ];
+  const rows = sales.map((sale) => [
+    sale.numeroTicket,
+    sale.vendueAtClient.toISOString(),
+    sale.ligneNom,
+    sale.busCode,
+    sale.receveurNom,
+    sale.monteeNom,
+    sale.destinationNom,
+    sale.troncons,
+    sale.prixUnitaireGnf,
+    sale.montantGnf,
+    sale.annulation ? "ANNULEE" : "VALIDEE",
+    sale.annulation ? "NON" : "OUI",
+    sale.annulation?.motif ?? "",
+    sale.annulation?.annuleeAt?.toISOString() ?? "",
+  ]);
+  const filePrefix = `ventes-${range.from}-${range.to}`;
+  if (request.query.format === "csv") {
+    response
+      .set("Content-Type", "text/csv; charset=utf-8")
+      .set("Content-Disposition", `attachment; filename="${filePrefix}.csv"`)
+      .send(toCsv(headers, rows));
+    return;
+  }
+  response
+    .set("Content-Type", "application/vnd.ms-excel; charset=utf-8")
+    .set("Content-Disposition", `attachment; filename="${filePrefix}.xls"`)
+    .send(toExcelXml(headers, rows));
 });
 
 // Le détail d'une vente suit la même règle d'isolation et ne fournit aucun endpoint de modification.

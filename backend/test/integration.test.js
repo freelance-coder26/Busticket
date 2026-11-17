@@ -195,6 +195,30 @@ test("synchronisation, isolation tenant, annulation et rapports", { skip: !integ
     assert.equal(reportData.total.ventesAnnulees, 1);
     assert.equal(reportData.total.versementAttenduGnf, 50000);
     assert.equal(reportData.total.ecartGnf, -44000);
+    assert.equal(reportData.parLigne[0].cle, line.nom);
+    assert.equal(reportData.parBus[0].cle, bus.code);
+    assert.equal(reportData.parReceveur[0].cle, receiver.nom);
+
+    const exportQuery = `?du=${day}&au=${day}&format=csv`;
+    const csvExport = await request(`/ventes/export${exportQuery}`, ownerToken);
+    assert.equal(csvExport.status, 200);
+    assert.match(csvExport.headers.get("content-type"), /text\/csv/);
+    const csvText = await csvExport.text();
+    assert.match(csvText, /ANNULEE/);
+    assert.match(csvText, /VALIDEE/);
+    assert.match(csvText, /Comptée dans les recettes/);
+    const isolatedExport = await request(`/ventes/export${exportQuery}`, otherToken);
+    assert.equal(isolatedExport.status, 200);
+    assert.doesNotMatch(await isolatedExport.text(), new RegExp(device.prefixeTicket));
+
+    const invalidFormat = await request(`/ventes/export?du=${day}&au=${day}&format=pdf`, ownerToken);
+    assert.equal(invalidFormat.status, 400);
+    const auditResponse = await request("/journal-audit?limit=100", ownerToken);
+    assert.equal(auditResponse.status, 200);
+    const auditEvents = (await auditResponse.json()).evenements;
+    assert.ok(auditEvents.some((event) => event.action === "BUS_CREE"));
+    assert.ok(auditEvents.some((event) => event.action === "SERVICE_CREE"));
+    assert.ok(auditEvents.some((event) => event.action === "VENTE_ANNULEE"));
     await context.test("la vente annulée reste persistée sans entrer dans les recettes", () => {
       assert.equal(sales.length, 2);
       assert.equal(reportData.total.recettesGnf, 6000);

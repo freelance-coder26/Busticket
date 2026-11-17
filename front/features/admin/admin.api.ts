@@ -1,4 +1,4 @@
-import { apiRequest } from "../../services/api.js";
+import { apiDownload, apiRequest } from "../../services/api.js";
 import type {
   Account,
   AuditEvent,
@@ -26,6 +26,17 @@ export function logout(refreshToken?: string): Promise<unknown> {
 
 export function runAdminAction(path: string, method: RequestMethod, body?: unknown): Promise<unknown> {
   return apiRequest(path, { method, body });
+}
+
+export async function downloadSalesExport(from: string, to: string, format: "csv" | "excel"): Promise<void> {
+  const query = new URLSearchParams({ du: from, au: to, format });
+  const blob = await apiDownload(`/ventes/export?${query.toString()}`);
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `ventes-${from}-${to}.${format === "excel" ? "xls" : "csv"}`;
+  link.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 export async function getSaleDetail(id: string): Promise<SaleDetail> {

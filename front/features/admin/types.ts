@@ -44,6 +44,10 @@ export type BusVariance = { busCode: string; recettesGnf: number; versementAtten
 export type Report = {
   total: { tickets: number; recettesGnf: number; ventesAnnulees: number; versementAttenduGnf: number; ecartGnf: number };
   parJour: ReportGroup[];
+  parBus: ReportGroup[];
+  parLigne: ReportGroup[];
+  parReceveur: ReportGroup[];
+  annulationsParReceveur: { receveur: string; annulations: number }[];
   ecartsParBus: BusVariance[];
 };
 export type AuditEvent = {
