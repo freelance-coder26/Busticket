@@ -20,8 +20,8 @@ export function login(credentials: { login: string; motDePasse: string; transpor
   return apiRequest<Session>("/auth/login", { method: "POST", body: credentials });
 }
 
-export function logout(refreshToken?: string): Promise<unknown> {
-  return apiRequest("/auth/logout", { method: "POST", body: { refreshToken } });
+export function logout(): Promise<unknown> {
+  return apiRequest("/auth/logout", { method: "POST" });
 }
 
 export function runAdminAction(path: string, method: RequestMethod, body?: unknown): Promise<unknown> {

@@ -7,6 +7,8 @@ import { authenticate } from "../middleware/authenticate.js";
 import { HttpError } from "../utils/http-error.js";
 import { idSchema, parseBody } from "../utils/validation.js";
 import { createTokenPair, hashRefreshToken } from "../services/auth-tokens.js";
+import { clearRefreshCookie, readRefreshCookie, writeRefreshCookie } from "../utils/cookies.js";
+import { REFRESH_TOKEN_TTL_DAYS } from "../config/business.js";
 
 const router = Router();
 const loginSchema = z.object({
@@ -14,7 +16,11 @@ const loginSchema = z.object({
   motDePasse: z.string().min(1).max(200),
   transporteurId: idSchema.optional(),
 }).strict();
-const refreshSchema = z.object({ refreshToken: z.string().min(40).max(200) }).strict();
+const REFRESH_TTL_MS = REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000;
+
+function publicUser(user) {
+  return { id: user.id, nom: user.nom, login: user.login, role: user.role, transporteurId: user.transporteurId };
+}
 
 // La connexion ne révèle pas si l'identifiant, le mot de passe ou le tenant est incorrect.
 router.post("/login", async (request, response) => {
@@ -33,15 +39,14 @@ router.post("/login", async (request, response) => {
   }
 
   const tokens = await prisma.$transaction((transaction) => createTokenPair(transaction, user));
-  response.json({
-    utilisateur: { id: user.id, nom: user.nom, login: user.login, role: user.role, transporteurId: user.transporteurId },
-    ...tokens,
-  });
+  writeRefreshCookie(response, tokens.refreshToken, REFRESH_TTL_MS);
+  response.json({ utilisateur: publicUser(user), accessToken: tokens.accessToken });
 });
 
-// La rotation révoque l'ancien jeton avant d'en émettre un nouveau dans la même transaction.
+// Le jeton de renouvellement voyage en cookie HttpOnly ; la rotation révoque l'ancien avant d'émettre un nouveau.
 router.post("/refresh", async (request, response) => {
-  const { refreshToken } = parseBody(refreshSchema, request.body);
+  const refreshToken = readRefreshCookie(request);
+  if (!refreshToken) throw new HttpError(401, "Jeton de renouvellement invalide ou expiré.", "REFRESH_INVALIDE");
   const fingerprint = hashRefreshToken(refreshToken);
   const result = await prisma.$transaction(async (transaction) => {
     const stored = await transaction.jetonRefresh.findUnique({
@@ -69,31 +74,26 @@ router.post("/refresh", async (request, response) => {
       throw new HttpError(401, "Jeton de renouvellement déjà utilisé.", "REFRESH_INVALIDE");
     }
     const tokens = await createTokenPair(transaction, stored.utilisateur);
-    return {
-      utilisateur: {
-        id: stored.utilisateur.id,
-        nom: stored.utilisateur.nom,
-        login: stored.utilisateur.login,
-        role: stored.utilisateur.role,
-        transporteurId: stored.utilisateur.transporteurId,
-      },
-      ...tokens,
-    };
+    return { utilisateur: publicUser(stored.utilisateur), tokens };
   });
-  response.json(result);
+  writeRefreshCookie(response, result.tokens.refreshToken, REFRESH_TTL_MS);
+  response.json({ utilisateur: result.utilisateur, accessToken: result.tokens.accessToken });
 });
 
-// La déconnexion invalide uniquement le jeton de renouvellement présenté.
+// La déconnexion invalide uniquement le jeton de renouvellement présenté par le cookie et le vide.
 router.post("/logout", authenticate, async (request, response) => {
-  const { refreshToken } = parseBody(refreshSchema, request.body);
-  await prisma.jetonRefresh.updateMany({
-    where: {
-      empreinte: hashRefreshToken(refreshToken),
-      utilisateurId: request.user.id,
-      revoqueAt: null,
-    },
-    data: { revoqueAt: new Date() },
-  });
+  const refreshToken = readRefreshCookie(request);
+  if (refreshToken) {
+    await prisma.jetonRefresh.updateMany({
+      where: {
+        empreinte: hashRefreshToken(refreshToken),
+        utilisateurId: request.user.id,
+        revoqueAt: null,
+      },
+      data: { revoqueAt: new Date() },
+    });
+  }
+  clearRefreshCookie(response);
   response.status(204).end();
 });
 

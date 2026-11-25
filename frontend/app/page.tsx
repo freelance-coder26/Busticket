@@ -21,7 +21,6 @@ export default function LoginPage() {
       const session = await apiRequest<{
         utilisateur: { id: string; nom: string; login: string; role: string; transporteurId: string | null };
         accessToken: string;
-        refreshToken: string;
       }>("/auth/login", {
         method: "POST",
         body: {

@@ -34,8 +34,24 @@ function jsonResponse(status, payload = {}) {
 const session = {
   utilisateur: { id: "receiver-1", role: "RECEVEUR" },
   accessToken: "expired-access-token",
-  refreshToken: "valid-refresh-token",
 };
+
+test("le jeton de renouvellement n'est jamais écrit dans le stockage local", async () => {
+  installSession(session);
+  assert.doesNotMatch(window.localStorage.getItem("busticket-admin-session"), /refreshToken|expired-access-token/);
+});
+
+test("chaque requête inclut les identifiants pour transmettre le cookie HttpOnly de renouvellement", async () => {
+  installSession(session);
+  const calls = [];
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, options });
+    return jsonResponse(200, { ok: true });
+  };
+  await apiRequest("/services");
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].options.credentials, "include");
+});
 
 test("keeps the session when token refresh fails with a server error", async () => {
   installSession(session);
@@ -66,8 +82,8 @@ test("shares one refresh request between concurrent API requests", async () => {
       refreshRequests += 1;
       await new Promise((resolve) => setTimeout(resolve, 10));
       return jsonResponse(200, {
+        utilisateur: session.utilisateur,
         accessToken: "new-access-token",
-        refreshToken: "new-refresh-token",
       });
     }
 
@@ -83,7 +99,7 @@ test("shares one refresh request between concurrent API requests", async () => {
   ]);
   assert.deepEqual(results, [{ ok: true }, { ok: true }]);
   assert.equal(refreshRequests, 1);
-  assert.equal(getSession().refreshToken, "new-refresh-token");
+  assert.equal(getSession().accessToken, "new-access-token");
 });
 
 test("downloads protected exports after refreshing an expired access token", async () => {
@@ -92,8 +108,8 @@ test("downloads protected exports after refreshing an expired access token", asy
   globalThis.fetch = async (url) => {
     if (url.endsWith("/auth/refresh")) {
       return jsonResponse(200, {
+        utilisateur: session.utilisateur,
         accessToken: "new-access-token",
-        refreshToken: "new-refresh-token",
       });
     }
     downloadRequests += 1;
@@ -107,5 +123,5 @@ test("downloads protected exports after refreshing an expired access token", asy
 
   assert.equal(await apiDownload("/ventes/export?format=csv"), "export-data");
   assert.equal(downloadRequests, 2);
-  assert.equal(getSession().refreshToken, "new-refresh-token");
+  assert.equal(getSession().accessToken, "new-access-token");
 });

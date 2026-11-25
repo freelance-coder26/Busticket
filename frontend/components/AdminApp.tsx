@@ -6,7 +6,7 @@ import { formatDate, formatGnf, pagesForRole, translateApiError, validateStops }
 import { getSaleDetail, loadAdminPage, login, logout as logoutApi, runAdminAction } from "../features/admin/admin.api";
 import AdminFeaturePages from "../features/admin/AdminFeaturePages";
 import Dashboard from "../features/admin/dashboard/Dashboard";
-import { Button, Field } from "../features/admin/admin-ui";
+import { Button, ConfirmDialog, Field, PromptDialog, type ConfirmRequest, type PromptRequest } from "../features/admin/admin-ui";
 import type { Account, Bus, Carrier, Data, Device, Line, Report, Sale, SaleDetail, Service, Session, Stop, Tariff } from "../features/admin/types";
 
 const today = new Date().toISOString().slice(0, 10);
@@ -50,6 +50,15 @@ export default function AdminApp() {
   const [salesStatus, setSalesStatus] = useState("");
   const [saleDetail, setSaleDetail] = useState<SaleDetail | null>(null);
   const [loginValues, setLoginValues] = useState({ login: "", motDePasse: "", transporteurId: "" });
+  const [confirmRequest, setConfirmRequest] = useState<ConfirmRequest | null>(null);
+  const [promptRequest, setPromptRequest] = useState<PromptRequest | null>(null);
+
+  function requestConfirm(message: string, onConfirm: () => void) {
+    setConfirmRequest({ message, onConfirm });
+  }
+  function requestPrompt(message: string, onSubmit: (value: string) => void, inputType?: "text" | "password") {
+    setPromptRequest({ message, onSubmit, inputType });
+  }
 
   const pages = useMemo(() => pagesForRole(session?.utilisateur.role ?? ""), [session]);
   const user = session?.utilisateur;
@@ -136,7 +145,7 @@ export default function AdminApp() {
   async function logout() {
     setError("");
     try {
-      await logoutApi(session?.refreshToken);
+      await logoutApi();
       clearSession();
       setCurrentSession(null);
       setData({});
@@ -198,13 +207,14 @@ export default function AdminApp() {
         ? { versementAttenduGnf: Number(form.versementAttenduGnf) }
         : { versementAttenduGnf: null }),
     };
-    if (editingBus && !window.confirm("Confirmer la modification de ce bus ?")) return;
-    await runAction(
+    const submit = () => runAction(
       editingBus ? `/bus/${editingBus.id}` : "/bus",
       editingBus ? "PATCH" : "POST",
       body,
       editingBus ? "Bus modifié." : "Bus créé.",
     );
+    if (editingBus) requestConfirm("Confirmer la modification de ce bus ?", () => void submit());
+    else await submit();
   }
 
   async function handleLineSubmit(event: FormEvent<HTMLFormElement>) {
@@ -220,13 +230,14 @@ export default function AdminApp() {
       return;
     }
     const normalizedStops = stops.map((stop) => ({ nom: stop.nom.trim(), position: Number(stop.position) }));
-    if (editingLine && !window.confirm("Confirmer la modification de la ligne et de ses repères ?")) return;
-    await runAction(
+    const submit = () => runAction(
       editingLine ? `/lignes/${editingLine.id}` : "/lignes",
       editingLine ? "PATCH" : "POST",
       { nom: form.nom.trim(), reperes: normalizedStops },
       editingLine ? "Ligne modifiée." : "Ligne créée.",
     );
+    if (editingLine) requestConfirm("Confirmer la modification de la ligne et de ses repères ?", () => void submit());
+    else await submit();
   }
 
   function validateNetwork() {
@@ -253,8 +264,10 @@ export default function AdminApp() {
       setError("Saisissez un montant GNF positif et une date d’effet valide.");
       return;
     }
-    if (!window.confirm(`Confirmer le nouveau tarif de ${formatGnf(amount)} à partir du ${formatDate(effectiveDate, { dateStyle: "long" })} ?`)) return;
-    await runAction("/tarifs", "POST", { montantGnf: amount, dateEffet: effectiveDate.toISOString() }, "Nouveau tarif enregistré avec son historique.");
+    requestConfirm(
+      `Confirmer le nouveau tarif de ${formatGnf(amount)} à partir du ${formatDate(effectiveDate, { dateStyle: "long" })} ?`,
+      () => void runAction("/tarifs", "POST", { montantGnf: amount, dateEffet: effectiveDate.toISOString() }, "Nouveau tarif enregistré avec son historique."),
+    );
   }
 
   async function handleUserSubmit(event: FormEvent<HTMLFormElement>) {
@@ -275,13 +288,14 @@ export default function AdminApp() {
       receveurId: form.receveurId || null,
       ...(!editingDevice ? { prefixeTicket: form.prefixeTicket?.trim().toUpperCase() } : {}),
     };
-    if (editingDevice && !window.confirm(`Confirmer la modification de ${editingDevice.nom} ?`)) return;
-    await runAction(
+    const submit = () => runAction(
       editingDevice ? `/appareils/${editingDevice.id}` : "/appareils",
       editingDevice ? "PATCH" : "POST",
       body,
       editingDevice ? "Appareil modifié." : "Appareil créé.",
     );
+    if (editingDevice) requestConfirm(`Confirmer la modification de ${editingDevice.nom} ?`, () => void submit());
+    else await submit();
   }
 
   async function handleServiceSubmit(event: FormEvent<HTMLFormElement>) {
@@ -421,6 +435,8 @@ export default function AdminApp() {
             loading={loading}
             runAction={runAction}
             setError={setError}
+            requestConfirm={requestConfirm}
+            requestPrompt={requestPrompt}
             busRows={busRows}
             lineRows={lineRows}
             tariffRows={tariffRows}
@@ -476,6 +492,8 @@ export default function AdminApp() {
             setSaleDetail={setSaleDetail}
             showSaleDetail={(id) => { void showSaleDetail(id); }}
           />
+          <ConfirmDialog request={confirmRequest} onClose={() => setConfirmRequest(null)} />
+          <PromptDialog request={promptRequest} onClose={() => setPromptRequest(null)} />
         </div>
         <footer className="page-footer"><span>Gorohitech · Billetterie de bus</span><span>Interface d’administration · Accès protégé</span></footer>
       </main>

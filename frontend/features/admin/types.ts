@@ -6,7 +6,7 @@ export type User = {
   transporteurId: string | null;
 };
 
-export type Session = { utilisateur: User; accessToken: string; refreshToken: string };
+export type Session = { utilisateur: User; accessToken: string };
 export type Stop = { id?: string; nom: string; position: number | string };
 export type Line = { id: string; nom: string; actif: boolean; reperes: Stop[] };
 export type Bus = { id: string; code: string; nom: string; actif: boolean; versementAttenduGnf: number | null };

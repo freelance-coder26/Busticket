@@ -8,13 +8,18 @@ const integrationEnabled = Boolean(process.env.DATABASE_URL);
 const { default: app } = await import("../src/app.js");
 const { prisma } = await import("../src/db.js");
 
-test("l'API expose son point de santé sans accès à la base", async () => {
+test("le point de santé reflète la connectivité réelle à la base de données", async () => {
   const server = app.listen(0);
   await new Promise((resolve) => server.once("listening", resolve));
   try {
     const response = await fetch(`http://127.0.0.1:${server.address().port}/api/health`);
-    assert.equal(response.status, 200);
-    assert.deepEqual(await response.json(), { statut: "ok" });
+    if (integrationEnabled) {
+      assert.equal(response.status, 200);
+      assert.deepEqual(await response.json(), { statut: "ok" });
+    } else {
+      assert.equal(response.status, 503);
+      assert.equal((await response.json()).code, "BASE_INJOIGNABLE");
+    }
   } finally {
     await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
   }

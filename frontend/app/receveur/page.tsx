@@ -13,7 +13,6 @@ type Stop = { id: string; nom: string; position: number };
 type ReceiverSession = {
   utilisateur: { id: string; nom: string; login: string; role: string; transporteurId: string | null };
   accessToken: string;
-  refreshToken: string;
 };
 type Configuration = {
   lastBoardingStopId?: string;
@@ -143,6 +142,7 @@ export default function ReceiverPage() {
   const [paperWidthMm, setPaperWidthMm] = useState<58 | 80>(58);
   const [printerBusy, setPrinterBusy] = useState(false);
   const [printerError, setPrinterError] = useState("");
+  const [finishConfirm, setFinishConfirm] = useState<{ message: string; unsynced: number } | null>(null);
   const syncRef = useRef<() => void>(() => {});
 
   const stops = useMemo(() => config?.service.ligne.reperes ?? [], [config]);
@@ -485,17 +485,24 @@ export default function ReceiverPage() {
     const receiverStore = store;
     if (!config || !receiverStore) return;
     const unsynced = await receiverStore.countUnsyncedSales(config.service.id);
-    const warning = unsynced
+    const message = unsynced
       ? `Il reste ${unsynced} vente(s) non synchronisée(s). Terminer le service quand même ?`
       : "Terminer ce service ?";
-    if (!window.confirm(warning)) return;
+    setFinishConfirm({ message, unsynced });
+  }
+
+  async function confirmFinishService() {
+    const receiverStore = store;
+    const pending = finishConfirm;
+    setFinishConfirm(null);
+    if (!config || !receiverStore || !pending) return;
     setLoading(true);
     try {
       await apiRequest(`/services/${config.service.id}`, { method: "PATCH", body: { statut: "TERMINE" } });
       const finished = { ...config, service: { ...config.service, statut: "TERMINE" as const } };
       await receiverStore.saveConfiguration(finished);
       setConfig(null);
-      setNotice(unsynced
+      setNotice(pending.unsynced
         ? "Service terminé. Les ventes non synchronisées sont conservées sur l’appareil."
         : "Service terminé.");
       await loadServices();
@@ -509,7 +516,7 @@ export default function ReceiverPage() {
   async function signOut() {
     try {
       const current = getSession() as ReceiverSession | null;
-      if (current) await apiRequest("/auth/logout", { method: "POST", body: { refreshToken: current.refreshToken } });
+      if (current) await apiRequest("/auth/logout", { method: "POST" });
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Déconnexion serveur impossible.");
     } finally {
@@ -724,11 +731,23 @@ export default function ReceiverPage() {
 
             <section className="receiver-card receiver-end-service">
               <h2>Fin de service</h2>
-              <p>{currentSales.length} ticket(s) · {formatGnf(currentSales.reduce((sum, sale) => sum + sale.data.montantGnf, 0))} · {unsyncedCount} vente(s) non synchronisée(s)</p>
+              <p>{currentSales.length} ticket(s) · {formatGnf(currentSales
+                .filter((sale) => sale.status !== "REJECTED")
+                .reduce((sum, sale) => sum + sale.data.montantGnf, 0))} · {unsyncedCount} vente(s) non synchronisée(s)</p>
               <p>Tronçons : {Object.keys(segmentsSummary).length
                 ? Object.entries(segmentsSummary).sort(([left], [right]) => Number(left) - Number(right)).map(([segments, count]) => `${segments} tronçon(s) : ${count}`).join(" · ")
                 : "aucune vente"}</p>
-              <button className="button button-danger receiver-main-action" onClick={() => void finishService()} disabled={loading}>Terminer le service</button>
+              {finishConfirm ? (
+                <div className="receiver-alert" role="alertdialog" aria-modal="true">
+                  <p>{finishConfirm.message}</p>
+                  <div className="receiver-actions">
+                    <button className="button button-quiet" onClick={() => setFinishConfirm(null)}>Annuler</button>
+                    <button className="button button-danger" onClick={() => void confirmFinishService()} disabled={loading}>Confirmer</button>
+                  </div>
+                </div>
+              ) : (
+                <button className="button button-danger receiver-main-action" onClick={() => void finishService()} disabled={loading}>Terminer le service</button>
+              )}
             </section>
             <button className="receiver-link receiver-logout" onClick={() => void signOut()}>Se déconnecter</button>
           </>

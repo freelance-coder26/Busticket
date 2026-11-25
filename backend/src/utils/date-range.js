@@ -1,4 +1,6 @@
 // Les bornes UTC correspondent à Africa/Conakry, sans décalage saisonnier, et incluent la date de fin.
+const MAX_RANGE_DAYS = 366;
+
 export function parseDateRange(query, { defaultToToday = false } = {}) {
   const today = new Date().toISOString().slice(0, 10);
   const from = query.du ?? (defaultToToday ? today : undefined);
@@ -15,5 +17,10 @@ export function parseDateRange(query, { defaultToToday = false } = {}) {
   const start = new Date(`${from}T00:00:00.000Z`);
   const end = new Date(`${to}T00:00:00.000Z`);
   end.setUTCDate(end.getUTCDate() + 1);
+
+  // Une période non bornée forcerait le serveur à charger un volume de ventes illimité.
+  const spanDays = (end.getTime() - start.getTime()) / 86_400_000;
+  if (spanDays > MAX_RANGE_DAYS) return null;
+
   return { from, to, start, end };
 }
