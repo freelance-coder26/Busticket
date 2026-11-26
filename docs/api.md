@@ -7,12 +7,12 @@ L'API Express est exposée sous `/api`. Elle utilise PostgreSQL via Prisma. En p
 | Méthode | Route | Accès | Description |
 |---|---|---|---|
 | `GET` | `/health` | Public | Vérification de disponibilité de l'API. |
-| `POST` | `/auth/login` | Public, limité à 10 tentatives par fenêtre de 15 minutes et par IP | Corps : `login`, `motDePasse`, et `transporteurId` pour un compte transporteur. |
-| `POST` | `/auth/refresh` | Public | Corps : `refreshToken`; fait tourner le jeton à usage unique. |
-| `POST` | `/auth/logout` | Authentifié | Corps : `refreshToken`; révoque le jeton de l'utilisateur connecté. |
+| `POST` | `/auth/login` | Public, limité à 10 tentatives par fenêtre de 15 minutes et par IP | Corps : `login`, `motDePasse`. `login` est unique sur toute la plateforme, aucun identifiant de transporteur n'est nécessaire. |
+| `POST` | `/auth/refresh` | Public | Aucun corps : le jeton de renouvellement voyage dans un cookie `HttpOnly` posé à la connexion et fait tourner le jeton à usage unique. |
+| `POST` | `/auth/logout` | Authentifié | Aucun corps : révoque le jeton de renouvellement lu dans le même cookie et le vide. |
 | `GET` | `/auth/me` | Authentifié | Renvoie l'identité, le rôle et le transporteur du jeton. |
 
-Les corps JSON sont validés côté serveur et les objets d'entrée rejettent les champs inattendus. Les identifiants sont des UUID. Les erreurs utilisent un statut HTTP et un objet `{ "erreur": "...", "code": "..." }`. Un jeton d'accès expire après 15 minutes par défaut; le jeton de renouvellement est rotatif et expire après 30 jours par défaut.
+Les corps JSON sont validés côté serveur et les objets d'entrée rejettent les champs inattendus. Les identifiants sont des UUID. Les erreurs utilisent un statut HTTP et un objet `{ "erreur": "...", "code": "..." }`. Un jeton d'accès expire après 15 minutes par défaut (renvoyé dans la réponse JSON, à garder en mémoire côté client) ; le jeton de renouvellement est rotatif, expire après 30 jours par défaut et n'est jamais exposé en JavaScript.
 
 ## Ressources
 

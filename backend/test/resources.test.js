@@ -1,4 +1,5 @@
 // Couvre les routes CRUD de resources.js, seulement effleurées par integration.test.js.
+import "dotenv/config";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
@@ -35,7 +36,7 @@ test("routes CRUD de resources.js : permissions, validations et contraintes", { 
     const response = await fetch(`${baseUrl}/auth/login`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ login: account.login, motDePasse: password, transporteurId: carrier.id }),
+      body: JSON.stringify({ login: account.login, motDePasse: password }),
     });
     assert.equal(response.status, 200);
     return (await response.json()).accessToken;
@@ -102,12 +103,12 @@ test("routes CRUD de resources.js : permissions, validations et contraintes", { 
 
     // Un receveur actif ne peut pas être attribué à deux appareils en même temps.
     const firstDevice = await request("/appareils", ownerToken, "POST", {
-      prefixeTicket: `D1${suffix.slice(0, 4)}`, nom: "Appareil 1", receveurId: receiverB.id,
+      prefixeTicket: `D1${suffix.slice(0, 4).toUpperCase()}`, nom: "Appareil 1", receveurId: receiverB.id,
     });
     assert.equal(firstDevice.status, 201);
 
     const conflictingDevice = await request("/appareils", ownerToken, "POST", {
-      prefixeTicket: `D2${suffix.slice(0, 4)}`, nom: "Appareil 2", receveurId: receiverB.id,
+      prefixeTicket: `D2${suffix.slice(0, 4).toUpperCase()}`, nom: "Appareil 2", receveurId: receiverB.id,
     });
     assert.equal(conflictingDevice.status, 409);
     assert.equal((await conflictingDevice.json()).code, "RECEVEUR_DEJA_ATTRIBUE");

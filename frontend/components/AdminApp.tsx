@@ -1,12 +1,13 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { clearSession, getSession, setSession } from "../services/api.js";
+import { useRouter } from "next/navigation";
+import { clearSession, getSession } from "../services/api.js";
 import { formatDate, formatGnf, pagesForRole, translateApiError, validateStops } from "../../shared/admin-utils.js";
-import { getSaleDetail, loadAdminPage, login, logout as logoutApi, runAdminAction } from "../features/admin/admin.api";
+import { getSaleDetail, loadAdminPage, logout as logoutApi, runAdminAction } from "../features/admin/admin.api";
 import AdminFeaturePages from "../features/admin/AdminFeaturePages";
 import Dashboard from "../features/admin/dashboard/Dashboard";
-import { Button, ConfirmDialog, Field, PromptDialog, type ConfirmRequest, type PromptRequest } from "../features/admin/admin-ui";
+import { Button, ConfirmDialog, PromptDialog, type ConfirmRequest, type PromptRequest } from "../features/admin/admin-ui";
 import type { Account, Bus, Carrier, Data, Device, Line, Report, Sale, SaleDetail, Service, Session, Stop, Tariff } from "../features/admin/types";
 
 const today = new Date().toISOString().slice(0, 10);
@@ -24,6 +25,7 @@ function getErrorMessage(error: unknown) {
 }
 
 export default function AdminApp() {
+  const router = useRouter();
   const [session, setCurrentSession] = useState<Session | null>(null);
   const [ready, setReady] = useState(false);
   const [selectedPage, setSelectedPage] = useState("");
@@ -49,7 +51,6 @@ export default function AdminApp() {
   const [salesReceiverId, setSalesReceiverId] = useState("");
   const [salesStatus, setSalesStatus] = useState("");
   const [saleDetail, setSaleDetail] = useState<SaleDetail | null>(null);
-  const [loginValues, setLoginValues] = useState({ login: "", motDePasse: "", transporteurId: "" });
   const [confirmRequest, setConfirmRequest] = useState<ConfirmRequest | null>(null);
   const [promptRequest, setPromptRequest] = useState<PromptRequest | null>(null);
 
@@ -100,6 +101,11 @@ export default function AdminApp() {
           setCurrentSession(saved);
           const firstPage = pagesForRole(saved.utilisateur.role)[0]?.id ?? "";
           setSelectedPage(firstPage);
+        } else {
+          // La connexion se fait maintenant sur une page dédiée, partagée par tous les rôles
+          // sauf l'administrateur plateforme (voir app/page.tsx et app/plateforme/page.tsx).
+          router.push("/");
+          return;
         }
       } catch (sessionError) {
         setError(getErrorMessage(sessionError));
@@ -108,6 +114,7 @@ export default function AdminApp() {
       }
     }, 0);
     return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -118,40 +125,18 @@ export default function AdminApp() {
 
   const setValue = (key: string, value: string) => setForm((current) => ({ ...current, [key]: value }));
 
-  async function submitLogin(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setLoading(true);
-    setError("");
-    try {
-      const result = await login({
-        login: loginValues.login,
-        motDePasse: loginValues.motDePasse,
-        ...(loginValues.transporteurId.trim() ? { transporteurId: loginValues.transporteurId.trim() } : {}),
-      });
-      setSession(result);
-      setCurrentSession(result);
-      const firstPage = pagesForRole(result.utilisateur.role)[0]?.id ?? "";
-      setSelectedPage(firstPage);
-      setData({});
-      setNotice("");
-      setLoginValues({ login: "", motDePasse: "", transporteurId: "" });
-    } catch (requestError) {
-      setError(getErrorMessage(requestError));
-    } finally {
-      setLoading(false);
-    }
-  }
-
   async function logout() {
     setError("");
     try {
       await logoutApi();
+    } catch (requestError) {
+      setError(getErrorMessage(requestError));
+    } finally {
       clearSession();
       setCurrentSession(null);
       setData({});
       setSelectedPage("");
-    } catch (requestError) {
-      setError(getErrorMessage(requestError));
+      router.push("/");
     }
   }
 
@@ -319,28 +304,7 @@ export default function AdminApp() {
     }, "Transporteur créé.");
   }
 
-  if (!ready) return <main className="loading-screen">Chargement…</main>;
-  if (!session) {
-    return (
-      <main className="login-screen">
-        <div className="login-decoration" aria-hidden="true" />
-        <section className="login-card">
-          <div className="brand-mark">G</div>
-          <p className="eyebrow">GOROHITECH · BILLETTERIE</p>
-          <h1>Votre espace de gestion</h1>
-          <p className="muted">Connectez-vous pour suivre vos bus, vos ventes et vos recettes.</p>
-          {error && <div className="alert alert-error" role="alert">{error}</div>}
-          <form className="form-stack" onSubmit={submitLogin}>
-            <Field label="Identifiant" autoComplete="username" value={loginValues.login} onChange={(event) => setLoginValues({ ...loginValues, login: event.target.value })} required />
-            <Field label="Mot de passe" type="password" autoComplete="current-password" value={loginValues.motDePasse} onChange={(event) => setLoginValues({ ...loginValues, motDePasse: event.target.value })} required />
-            <Field label="Identifiant transporteur (pour un compte transporteur)" value={loginValues.transporteurId} onChange={(event) => setLoginValues({ ...loginValues, transporteurId: event.target.value })} />
-            <Button type="submit" disabled={loading}>{loading ? "Connexion…" : "Se connecter"} <span aria-hidden="true">→</span></Button>
-          </form>
-          <p className="login-footnote">La sécurité des accès est vérifiée par le serveur.</p>
-        </section>
-      </main>
-    );
-  }
+  if (!ready || !session) return <main className="loading-screen">Chargement…</main>;
 
   if (!pages.length) {
     return (

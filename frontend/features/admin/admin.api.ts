@@ -11,14 +11,12 @@ import type {
   Sale,
   SaleDetail,
   Service,
-  Session,
 } from "./types";
 
 type RequestMethod = "POST" | "PATCH" | "DELETE";
 
-export function login(credentials: { login: string; motDePasse: string; transporteurId?: string }): Promise<Session> {
-  return apiRequest<Session>("/auth/login", { method: "POST", body: credentials });
-}
+// La connexion se fait désormais sur des pages dédiées (app/page.tsx, app/plateforme/page.tsx)
+// qui appellent directement apiRequest("/auth/login", ...).
 
 export function logout(): Promise<unknown> {
   return apiRequest("/auth/logout", { method: "POST" });

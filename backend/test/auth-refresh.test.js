@@ -1,4 +1,5 @@
 // Teste la rotation à usage unique du jeton de renouvellement, transmis via cookie HttpOnly.
+import "dotenv/config";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
@@ -31,7 +32,7 @@ test("un jeton de renouvellement déjà utilisé est rejeté (détection de rée
     const loginResponse = await fetch(`${baseUrl}/auth/login`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ login: user.login, motDePasse: password, transporteurId: carrier.id }),
+      body: JSON.stringify({ login: user.login, motDePasse: password }),
     });
     assert.equal(loginResponse.status, 200);
     const refreshCookie = (loginResponse.headers.get("set-cookie") ?? "").match(/refreshToken=[^;]+/)?.[0];

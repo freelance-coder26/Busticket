@@ -9,7 +9,7 @@
     "start": "next start",
     "lint": "eslint",
     "test": "node --test test/*.test.js features/receiver/*.test.js features/receiver/printer/*.test.js && npm run test:components",
-    "test:components": "node --import tsx/esm --import ./test/setup-dom.js --test test/components/*.test.tsx",
+    "test:components": "node --import tsx/esm --import ./test/setup-dom.js --experimental-test-module-mocks --test test/components/*.test.tsx",
     "cap:sync": "cap sync android",
     "android:open": "cap open android",
     "android:build": "npm run build && cap sync android && cap open android",

@@ -1,11 +1,11 @@
 "use client";
 
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Network } from "@capacitor/network";
 import { calculateFare } from "../../../shared/fare.js";
 import { formatGnf } from "../../../shared/admin-utils.js";
-import { apiRequest, clearSession, getSession, setSession } from "../../services/api.js";
+import { apiRequest, clearSession, getSession } from "../../services/api.js";
 import { getReceiverStore } from "../../features/receiver/sqlite-receiver-store.js";
 import { printerService } from "../../features/receiver/printer/printer-service.js";
 
@@ -110,15 +110,13 @@ function printableTicket(sale: StoredSale["data"], configuration: Configuration)
 }
 
 export default function ReceiverPage() {
+  const router = useRouter();
   const [session, setCurrentSession] = useState<ReceiverSession | null>(null);
   const [store, setStore] = useState<ReceiverStore | null>(null);
   const [config, setConfig] = useState<Configuration | null>(null);
   const [services, setServices] = useState<Array<Configuration["service"]>>([]);
   const [sales, setSales] = useState<StoredSale[]>([]);
   const [screen, setScreen] = useState<"dashboard" | "sale" | "history">("dashboard");
-  const [login, setLogin] = useState("");
-  const [password, setPassword] = useState("");
-  const [carrierId, setCarrierId] = useState("");
   const [boardingId, setBoardingId] = useState("");
   const [destinationId, setDestinationId] = useState("");
   const [preview, setPreview] = useState(false);
@@ -205,6 +203,7 @@ export default function ReceiverPage() {
         const savedSession = getSession() as ReceiverSession | null;
         if (savedSession?.utilisateur.role === "RECEVEUR") {
           setCurrentSession(savedSession);
+          void loadServices();
           const cachedConfigs = await receiverStore.listConfigurations() as Configuration[];
           const activeConfig = cachedConfigs.find((item) => item.service.statut === "OUVERT");
           if (activeConfig) {
@@ -217,6 +216,10 @@ export default function ReceiverPage() {
           const status = await Network.getStatus();
           setOnline(status.connected);
           if (status.connected) syncRef.current();
+        } else {
+          // La connexion se fait désormais sur la page partagée (voir app/page.tsx).
+          router.push("/");
+          return;
         }
       } catch (initializationError) {
         setError(initializationError instanceof Error
@@ -250,39 +253,6 @@ export default function ReceiverPage() {
       void networkListener?.remove();
     };
   }, []);
-
-  async function signIn(event: React.FormEvent) {
-    event.preventDefault();
-    setLoading(true);
-    setError("");
-    try {
-      const result = await apiRequest<ReceiverSession>("/auth/login", {
-        method: "POST",
-        body: { login, motDePasse: password, ...(carrierId ? { transporteurId: carrierId } : {}) },
-      });
-      if (result.utilisateur.role !== "RECEVEUR") {
-        throw new Error("Ce compte n’est pas un compte receveur.");
-      }
-      setSession(result);
-      setCurrentSession(result);
-      setPassword("");
-      setNotice("Connecté. Sélectionnez votre service pour télécharger sa configuration.");
-      const response = await apiRequest<{ services: Array<Configuration["service"]> }>("/services");
-      setServices(response.services.filter((service) => service.statut === "OUVERT"));
-      setError("");
-      try {
-        const status = await Network.getStatus();
-        setOnline(status.connected);
-        if (status.connected) syncRef.current();
-      } catch (networkError) {
-        setError(networkError instanceof Error ? networkError.message : "État du réseau indisponible.");
-      }
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Connexion impossible.");
-    } finally {
-      setLoading(false);
-    }
-  }
 
   async function loadServices() {
     setLoading(true);
@@ -524,6 +494,7 @@ export default function ReceiverPage() {
       setCurrentSession(null);
       setConfig(null);
       setSales([]);
+      router.push("/");
     }
   }
 
@@ -544,26 +515,7 @@ export default function ReceiverPage() {
     return summary;
   }, {});
 
-  if (!session) {
-    return (
-      <main className="receiver-screen">
-        <section className="receiver-card receiver-login">
-          <div className="brand-mark">GB</div>
-          <p className="eyebrow">ESPACE RECEVEUR</p>
-          <h1>Connexion</h1>
-          <p className="muted">Connectez-vous avant le départ pour charger le service et sa configuration hors ligne.</p>
-          {error && <div className="receiver-alert" role="alert">{error}</div>}
-          <form className="form-stack" onSubmit={signIn}>
-            <label className="field">Identifiant<input autoComplete="username" required value={login} onChange={(event) => setLogin(event.target.value)} /></label>
-            <label className="field">Mot de passe<input type="password" autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} /></label>
-            <label className="field">Identifiant transporteur<input value={carrierId} onChange={(event) => setCarrierId(event.target.value)} placeholder="Requis pour un compte transporteur" /></label>
-            <button className="button button-primary receiver-main-action" disabled={loading || !store}>{loading ? "Connexion…" : store ? "Se connecter" : "Initialisation…"}</button>
-          </form>
-          <Link className="receiver-link" href="/">Administration</Link>
-        </section>
-      </main>
-    );
-  }
+  if (!session) return <main className="loading-screen">Chargement…</main>;
 
   return (
     <main className="receiver-screen">

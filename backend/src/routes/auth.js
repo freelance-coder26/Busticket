@@ -5,7 +5,7 @@ import { z } from "zod";
 import { prisma } from "../db.js";
 import { authenticate } from "../middleware/authenticate.js";
 import { HttpError } from "../utils/http-error.js";
-import { idSchema, parseBody } from "../utils/validation.js";
+import { parseBody } from "../utils/validation.js";
 import { createTokenPair, hashRefreshToken } from "../services/auth-tokens.js";
 import { clearRefreshCookie, readRefreshCookie, writeRefreshCookie } from "../utils/cookies.js";
 import { REFRESH_TOKEN_TTL_DAYS } from "../config/business.js";
@@ -14,7 +14,6 @@ const router = Router();
 const loginSchema = z.object({
   login: z.string().trim().min(1).max(120),
   motDePasse: z.string().min(1).max(200),
-  transporteurId: idSchema.optional(),
 }).strict();
 const REFRESH_TTL_MS = REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000;
 
@@ -26,7 +25,7 @@ function publicUser(user) {
 router.post("/login", async (request, response) => {
   const input = parseBody(loginSchema, request.body);
   const user = await prisma.utilisateur.findFirst({
-    where: { login: input.login, transporteurId: input.transporteurId ?? null },
+    where: { login: input.login },
   });
   if (!user || !user.actif || !(await bcrypt.compare(input.motDePasse, user.motDePasseHash))) {
     throw new HttpError(401, "Identifiants incorrects.", "IDENTIFIANTS_INVALIDES");

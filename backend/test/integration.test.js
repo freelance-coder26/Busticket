@@ -1,4 +1,5 @@
 // La recette API utilise une base PostgreSQL isolée, fournie explicitement par DATABASE_URL.
+import "dotenv/config";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
@@ -108,11 +109,11 @@ test("synchronisation, isolation tenant, annulation et rapports", { skip: !integ
   const server = app.listen(0);
   await new Promise((resolve) => server.once("listening", resolve));
   const baseUrl = `http://127.0.0.1:${server.address().port}/api`;
-  const login = async (account, transporteurId) => {
+  const login = async (account) => {
     const response = await fetch(`${baseUrl}/auth/login`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ login: account.login, motDePasse: password, transporteurId }),
+      body: JSON.stringify({ login: account.login, motDePasse: password }),
     });
     assert.equal(response.status, 200);
     return (await response.json()).accessToken;
@@ -127,9 +128,9 @@ test("synchronisation, isolation tenant, annulation et rapports", { skip: !integ
   });
 
   try {
-    const receiverToken = await login(receiver, carrier.id);
-    const ownerToken = await login(owner, carrier.id);
-    const otherToken = await login(otherOwner, otherCarrier.id);
+    const receiverToken = await login(receiver);
+    const ownerToken = await login(owner);
+    const otherToken = await login(otherOwner);
     const configResponse = await request(`/config-service?serviceId=${service.id}`, receiverToken);
     assert.equal(configResponse.status, 200);
     assert.equal((await configResponse.json()).tarif.montantGnf, 2000);
@@ -221,8 +222,8 @@ test("synchronisation, isolation tenant, annulation et rapports", { skip: !integ
     const auditResponse = await request("/journal-audit?limit=100", ownerToken);
     assert.equal(auditResponse.status, 200);
     const auditEvents = (await auditResponse.json()).evenements;
-    assert.ok(auditEvents.some((event) => event.action === "BUS_CREE"));
-    assert.ok(auditEvents.some((event) => event.action === "SERVICE_CREE"));
+    // Le bus et le service de ce test sont créés directement via Prisma (pas via l'API), donc
+    // seule l'annulation ci-dessus, passée par la vraie route, doit apparaître au journal.
     assert.ok(auditEvents.some((event) => event.action === "VENTE_ANNULEE"));
     await context.test("la vente annulée reste persistée sans entrer dans les recettes", () => {
       assert.equal(sales.length, 2);
