@@ -1,8 +1,4 @@
-<<<<<<< HEAD
-import type { ReactNode } from "react";
-=======
 import { useState, type ReactNode } from "react";
->>>>>>> 0bd557f155697b37fe77a2b002d3aab49268b3da
 
 export function Button({
   children,
@@ -60,9 +56,6 @@ export function PanelTitle({ title, count }: { title: string; count: number }) {
 export function Status({ active }: { active: boolean }) {
   return <span className={`status ${active ? "status-active" : "status-inactive"}`}>{active ? "Actif" : "Inactif"}</span>;
 }
-<<<<<<< HEAD
-=======
-
 export type ConfirmRequest = { message: string; onConfirm: () => void };
 export type PromptRequest = {
   message: string;
@@ -115,4 +108,4 @@ function PromptDialogBody({ request, onClose }: { request: PromptRequest; onClos
     </div>
   );
 }
->>>>>>> 0bd557f155697b37fe77a2b002d3aab49268b3da
+
