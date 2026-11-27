@@ -67,7 +67,7 @@ model Utilisateur {
   appareilsAttribues Appareil[]          @relation("ReceveurAppareil")
   tarifsCrees        TarifTransporteur[] @relation("AuteurTarif")
 
-  @@unique([transporteurId, login])
+  @@unique([login])
   @@index([transporteurId, role, actif])
   @@index([telephone])
 }
@@ -177,6 +177,8 @@ model Service {
 
   @@index([transporteurId, debutAt])
   @@index([transporteurId, receveurId, statut])
+  @@index([transporteurId, busId])
+  @@index([transporteurId, ligneId])
 }
 
 model Vente {

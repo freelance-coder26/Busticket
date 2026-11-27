@@ -1,6 +1,6 @@
 # Guide d'utilisation — receveur
 
-L'application receveur est prévue pour Android et se trouve à `/receveur` dans le client. Elle conserve localement les services et ventes non synchronisées. Se connecter périodiquement en ligne est nécessaire pour renouveler la session et synchroniser.
+L'application receveur est prévue pour Android. La connexion se fait sur l'écran de connexion partagé (`/`), qui redirige automatiquement vers l'espace receveur (`/receveur`) une fois identifié. Elle conserve localement les services et ventes non synchronisées. Se connecter périodiquement en ligne est nécessaire pour renouveler la session et synchroniser.
 
 ## Avant le service
 

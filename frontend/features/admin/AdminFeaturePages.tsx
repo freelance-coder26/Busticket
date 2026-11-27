@@ -15,6 +15,8 @@ type Props = {
   loading: boolean;
   runAction: (path: string, method: "POST" | "PATCH" | "DELETE", body: unknown, success: string) => Promise<void>;
   setError: (message: string) => void;
+  requestConfirm: (message: string, onConfirm: () => void) => void;
+  requestPrompt: (message: string, onSubmit: (value: string) => void, inputType?: "text" | "password") => void;
   busRows: Bus[];
   lineRows: Line[];
   tariffRows: Tariff[];
@@ -94,7 +96,7 @@ function getSimulationResult(stops: Stop[], boardingStopId: string, destinationS
 
 export default function AdminFeaturePages(props: Props) {
   const {
-    page, role, data, form, setValue, clearForm, loading, runAction, setError,
+    page, role, data, form, setValue, clearForm, loading, runAction, setError, requestConfirm, requestPrompt,
     busRows, lineRows, tariffRows, userRows, deviceRows, serviceRows, saleRows, carrierRows,
     onBusSubmit, onLineSubmit, onTariffSubmit, onUserSubmit, onDeviceSubmit, onServiceSubmit, onCarrierSubmit,
     editingBus, setEditingBus, editingLine, setEditingLine, editingDevice, setEditingDevice,
@@ -125,8 +127,8 @@ export default function AdminFeaturePages(props: Props) {
             <td><Status active={bus.actif} /></td>
             <td className="row-actions">
               <Button variant="quiet" onClick={() => { setEditingBus(bus); setValue("code", bus.code); setValue("nom", bus.nom); setValue("versementAttenduGnf", bus.versementAttenduGnf?.toString() ?? ""); }}>Modifier</Button>
-              <Button variant="quiet" onClick={() => { if (window.confirm(`Confirmer la ${bus.actif ? "désactivation" : "activation"} du bus ${bus.code} ?`)) void runAction(`/bus/${bus.id}`, "PATCH", { actif: !bus.actif }, bus.actif ? "Bus désactivé." : "Bus activé."); }}>{bus.actif ? "Désactiver" : "Activer"}</Button>
-              <Button variant="danger" onClick={() => { if (window.confirm(`Supprimer le bus ${bus.code} ?`)) void runAction(`/bus/${bus.id}`, "DELETE", undefined, "Bus supprimé."); }}>Supprimer</Button>
+              <Button variant="quiet" onClick={() => requestConfirm(`Confirmer la ${bus.actif ? "désactivation" : "activation"} du bus ${bus.code} ?`, () => void runAction(`/bus/${bus.id}`, "PATCH", { actif: !bus.actif }, bus.actif ? "Bus désactivé." : "Bus activé."))}>{bus.actif ? "Désactiver" : "Activer"}</Button>
+              <Button variant="danger" onClick={() => requestConfirm(`Supprimer le bus ${bus.code} ?`, () => void runAction(`/bus/${bus.id}`, "DELETE", undefined, "Bus supprimé."))}>Supprimer</Button>
             </td>
           </tr>)}
         </tbody></Table>}
@@ -179,8 +181,8 @@ export default function AdminFeaturePages(props: Props) {
           <td><strong>{line.nom}</strong></td><td>{line.reperes.map((stop) => stop.nom).join(" → ")}</td><td><Status active={line.actif} /></td>
           <td className="row-actions">
             <Button variant="quiet" onClick={() => { setEditingLine(line); setValue("nom", line.nom); setStops(line.reperes.map((stop) => ({ ...stop }))); clearNetworkValidation(); }}>Modifier</Button>
-            <Button variant="quiet" onClick={() => { if (window.confirm(`Confirmer la ${line.actif ? "désactivation" : "activation"} de la ligne ${line.nom} ?`)) void runAction(`/lignes/${line.id}`, "PATCH", { actif: !line.actif }, line.actif ? "Ligne désactivée." : "Ligne activée."); }}>{line.actif ? "Désactiver" : "Activer"}</Button>
-            <Button variant="danger" onClick={() => { if (window.confirm(`Supprimer la ligne ${line.nom} ?`)) void runAction(`/lignes/${line.id}`, "DELETE", undefined, "Ligne supprimée."); }}>Supprimer</Button>
+            <Button variant="quiet" onClick={() => requestConfirm(`Confirmer la ${line.actif ? "désactivation" : "activation"} de la ligne ${line.nom} ?`, () => void runAction(`/lignes/${line.id}`, "PATCH", { actif: !line.actif }, line.actif ? "Ligne désactivée." : "Ligne activée."))}>{line.actif ? "Désactiver" : "Activer"}</Button>
+            <Button variant="danger" onClick={() => requestConfirm(`Supprimer la ligne ${line.nom} ?`, () => void runAction(`/lignes/${line.id}`, "DELETE", undefined, "Ligne supprimée."))}>Supprimer</Button>
           </td>
         </tr>)}</tbody></Table>}
       </Panel>
@@ -217,8 +219,11 @@ export default function AdminFeaturePages(props: Props) {
         {userRows.length === 0 ? <Empty /> : <Table><thead><tr><th>UTILISATEUR</th><th>RÔLE</th><th>STATUT</th><th /></tr></thead><tbody>{userRows.map((account) => <tr key={account.id}>
           <td><strong>{account.nom}</strong><small className="table-sub">{account.login}</small></td><td>{account.role}</td><td><Status active={account.actif} /></td>
           <td className="row-actions">
-            <Button variant="quiet" onClick={() => { if (window.confirm(`Confirmer la ${account.actif ? "désactivation" : "réactivation"} de ${account.nom} ?`)) void runAction(`/utilisateurs/${account.id}`, "PATCH", { actif: !account.actif }, account.actif ? "Compte désactivé." : "Compte réactivé."); }}>{account.actif ? "Désactiver" : "Réactiver"}</Button>
-            <Button variant="quiet" onClick={() => { const password = window.prompt("Nouveau mot de passe (12 caractères minimum) :"); if (password === null) return; if (password.length < 12) { setError("Le mot de passe doit contenir au moins 12 caractères."); return; } if (window.confirm(`Réinitialiser le mot de passe de ${account.nom} ?`)) void runAction(`/utilisateurs/${account.id}`, "PATCH", { motDePasse: password }, "Mot de passe réinitialisé."); }}>Réinitialiser le mot de passe</Button>
+            <Button variant="quiet" onClick={() => requestConfirm(`Confirmer la ${account.actif ? "désactivation" : "réactivation"} de ${account.nom} ?`, () => void runAction(`/utilisateurs/${account.id}`, "PATCH", { actif: !account.actif }, account.actif ? "Compte désactivé." : "Compte réactivé."))}>{account.actif ? "Désactiver" : "Réactiver"}</Button>
+            <Button variant="quiet" onClick={() => requestPrompt("Nouveau mot de passe (12 caractères minimum) :", (password) => {
+              if (password.length < 12) { setError("Le mot de passe doit contenir au moins 12 caractères."); return; }
+              requestConfirm(`Réinitialiser le mot de passe de ${account.nom} ?`, () => void runAction(`/utilisateurs/${account.id}`, "PATCH", { motDePasse: password }, "Mot de passe réinitialisé."));
+            }, "password")}>Réinitialiser le mot de passe</Button>
           </td>
         </tr>)}</tbody></Table>}
       </Panel>
@@ -237,7 +242,7 @@ export default function AdminFeaturePages(props: Props) {
       <Panel><PanelTitle title="Appareils attribués" count={deviceRows.length} />
         {deviceRows.length === 0 ? <Empty /> : <Table><thead><tr><th>APPAREIL</th><th>PRÉFIXE</th><th>RECEVEUR</th><th>STATUT</th><th /></tr></thead><tbody>{deviceRows.map((device) => <tr key={device.id}>
           <td><strong>{device.nom}</strong></td><td><span className="code-pill">{device.prefixeTicket}</span></td><td>{device.receveur?.nom ?? "—"}</td><td><Status active={device.actif} /></td>
-          <td className="row-actions"><Button variant="quiet" onClick={() => { setEditingDevice(device); setValue("nom", device.nom); setValue("receveurId", device.receveur?.id ?? ""); }}>Modifier</Button><Button variant="quiet" onClick={() => { if (window.confirm(`Confirmer la ${device.actif ? "désactivation" : "activation"} de ${device.nom} ?`)) void runAction(`/appareils/${device.id}`, "PATCH", { actif: !device.actif }, device.actif ? "Appareil désactivé." : "Appareil activé."); }}>{device.actif ? "Désactiver" : "Activer"}</Button></td>
+          <td className="row-actions"><Button variant="quiet" onClick={() => { setEditingDevice(device); setValue("nom", device.nom); setValue("receveurId", device.receveur?.id ?? ""); }}>Modifier</Button><Button variant="quiet" onClick={() => requestConfirm(`Confirmer la ${device.actif ? "désactivation" : "activation"} de ${device.nom} ?`, () => void runAction(`/appareils/${device.id}`, "PATCH", { actif: !device.actif }, device.actif ? "Appareil désactivé." : "Appareil activé."))}>{device.actif ? "Désactiver" : "Activer"}</Button></td>
         </tr>)}</tbody></Table>}
       </Panel>
     </>
@@ -257,7 +262,7 @@ export default function AdminFeaturePages(props: Props) {
       <Panel><PanelTitle title="Services enregistrés" count={serviceRows.length} />
         {serviceRows.length === 0 ? <Empty /> : <Table><thead><tr><th>OUVERTURE</th><th>BUS / LIGNE</th><th>RECEVEUR</th><th>SENS</th><th>STATUT</th><th /></tr></thead><tbody>{serviceRows.map((service) => <tr key={service.id}>
           <td>{formatDate(service.debutAt)}</td><td><strong>{service.bus?.code ?? "—"}</strong><small className="table-sub">{service.ligne?.nom ?? "—"}</small></td><td>{service.receveur?.nom ?? "—"}</td><td>{service.sens === "ALLER" ? "Aller" : "Retour"}</td>
-          <td><span className={`status ${service.statut === "OUVERT" ? "status-active" : "status-inactive"}`}>{service.statut === "OUVERT" ? "Ouvert" : "Terminé"}</span></td><td>{service.statut === "OUVERT" && <Button variant="quiet" onClick={() => { if (window.confirm("Terminer ce service ?")) void runAction(`/services/${service.id}`, "PATCH", { statut: "TERMINE" }, "Service terminé."); }}>Terminer</Button>}</td>
+          <td><span className={`status ${service.statut === "OUVERT" ? "status-active" : "status-inactive"}`}>{service.statut === "OUVERT" ? "Ouvert" : "Terminé"}</span></td><td>{service.statut === "OUVERT" && <Button variant="quiet" onClick={() => requestConfirm("Terminer ce service ?", () => void runAction(`/services/${service.id}`, "PATCH", { statut: "TERMINE" }, "Service terminé."))}>Terminer</Button>}</td>
         </tr>)}</tbody></Table>}
       </Panel>
     </>
@@ -281,13 +286,11 @@ export default function AdminFeaturePages(props: Props) {
         {saleRows.length === 0 ? <Empty>Aucune vente pour cette période.</Empty> : <Table><thead><tr><th>TICKET / DATE</th><th>TRAJET</th><th>BUS / RECEVEUR</th><th>MONTANT</th><th>STATUT</th><th /></tr></thead><tbody>{saleRows.map((sale) => <tr key={sale.id}>
           <td><strong>{sale.numeroTicket}</strong><small className="table-sub">{formatDate(sale.vendueAtClient)}</small></td><td>{sale.ligneNom}<small className="table-sub">→ {sale.destinationNom} · {sale.troncons} tronçon(s)</small></td>
           <td>{sale.busCode}<small className="table-sub">{sale.receveurNom}</small></td><td><strong>{formatGnf(sale.montantGnf)}</strong></td><td>{sale.annulation ? <span className="status status-inactive">Annulée</span> : <span className="status status-active">Valide</span>}</td>
-          <td className="row-actions"><Button variant="quiet" onClick={() => showSaleDetail(sale.id)}>Détail</Button>{!sale.annulation && role === "TRANSPORTEUR" && <Button variant="danger" onClick={() => {
-            const reason = window.prompt("Motif obligatoire de l’annulation du ticket :");
-            if (reason === null) return;
+          <td className="row-actions"><Button variant="quiet" onClick={() => showSaleDetail(sale.id)}>Détail</Button>{!sale.annulation && role === "TRANSPORTEUR" && <Button variant="danger" onClick={() => requestPrompt("Motif obligatoire de l’annulation du ticket :", (reason) => {
             const reasonError = validateCancellationReason(reason);
             if (reasonError) { setError(reasonError); return; }
-            if (window.confirm(`Confirmer l’annulation du ticket ${sale.numeroTicket} ?`)) void runAction(`/ventes/${sale.id}/annulation`, "POST", { motif: reason.trim() }, "Vente annulée avec motif.");
-          }}>Annuler</Button>}</td>
+            requestConfirm(`Confirmer l’annulation du ticket ${sale.numeroTicket} ?`, () => void runAction(`/ventes/${sale.id}/annulation`, "POST", { motif: reason.trim() }, "Vente annulée avec motif."));
+          })}>Annuler</Button>}</td>
         </tr>)}</tbody></Table>}
         {Number(data.total ?? 0) > 50 && <div className="pagination">
           <Button variant="quiet" disabled={salesPage <= 1 || loading} onClick={() => { const next = salesPage - 1; setSalesPage(next); loadSales(next); }}>← Précédent</Button>
@@ -332,7 +335,7 @@ export default function AdminFeaturePages(props: Props) {
       <Panel><PanelTitle title="Transporteurs" count={carrierRows.length} />
         {carrierRows.length === 0 ? <Empty /> : <Table><thead><tr><th>ORGANISATION</th><th>IDENTIFIANT</th><th>STATUT</th><th /></tr></thead><tbody>{carrierRows.map((carrier) => <tr key={carrier.id}>
           <td><strong>{carrier.nom}</strong></td><td className="table-sub">{carrier.id}</td><td><Status active={carrier.actif} /></td>
-          <td><Button variant="quiet" onClick={() => { if (window.confirm(`Confirmer la ${carrier.actif ? "désactivation" : "activation"} de ${carrier.nom} ?`)) void runAction(`/transporteurs/${carrier.id}`, "PATCH", { actif: !carrier.actif }, carrier.actif ? "Transporteur désactivé." : "Transporteur activé."); }}>{carrier.actif ? "Désactiver" : "Activer"}</Button></td>
+          <td><Button variant="quiet" onClick={() => requestConfirm(`Confirmer la ${carrier.actif ? "désactivation" : "activation"} de ${carrier.nom} ?`, () => void runAction(`/transporteurs/${carrier.id}`, "PATCH", { actif: !carrier.actif }, carrier.actif ? "Transporteur désactivé." : "Transporteur activé."))}>{carrier.actif ? "Désactiver" : "Activer"}</Button></td>
         </tr>)}</tbody></Table>}
       </Panel>
     </>

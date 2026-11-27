@@ -1,16 +1,42 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { apiRequest, setSession } from "../services/api.js";
+import { apiRequest, getSession, setSession } from "../services/api.js";
+
+type LoginResult = {
+  utilisateur: { id: string; nom: string; login: string; role: string; transporteurId: string | null };
+  accessToken: string;
+};
+
+// Après connexion, chaque rôle retrouve directement son espace : le receveur l'application
+// hors ligne, les autres l'administration web. Le superadmin n'est volontairement pas accepté
+// ici : il dispose de sa propre page (/plateforme).
+function redirectForRole(role: string, router: ReturnType<typeof useRouter>) {
+  if (role === "RECEVEUR") router.push("/receveur");
+  else router.push("/dashboard");
+}
 
 export default function LoginPage() {
   const router = useRouter();
   const [login, setLogin] = useState("");
   const [motDePasse, setMotDePasse] = useState("");
-  const [transporteurId, setTransporteurId] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const saved = getSession() as LoginResult | null;
+      if (saved && saved.utilisateur.role !== "ADMIN_PLATEFORME") {
+        redirectForRole(saved.utilisateur.role, router);
+        return;
+      }
+      setCheckingSession(false);
+    }, 0);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -18,20 +44,15 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const session = await apiRequest<{
-        utilisateur: { id: string; nom: string; login: string; role: string; transporteurId: string | null };
-        accessToken: string;
-        refreshToken: string;
-      }>("/auth/login", {
+      const session = await apiRequest<LoginResult>("/auth/login", {
         method: "POST",
-        body: {
-          login,
-          motDePasse,
-          ...(transporteurId ? { transporteurId } : {}),
-        },
+        body: { login, motDePasse },
       });
+      if (session.utilisateur.role === "ADMIN_PLATEFORME") {
+        throw new Error("Les comptes plateforme se connectent depuis /plateforme.");
+      }
       setSession(session);
-      router.push("/dashboard");
+      redirectForRole(session.utilisateur.role, router);
     } catch (requestError) {
       setError(requestError instanceof Error
         ? requestError.message
@@ -40,6 +61,8 @@ export default function LoginPage() {
       setLoading(false);
     }
   }
+
+  if (checkingSession) return <main className="loading-screen">Chargement…</main>;
 
   return (
     <div className="login-screen">
@@ -75,14 +98,6 @@ export default function LoginPage() {
               autoComplete="current-password"
               value={motDePasse}
               onChange={(e) => setMotDePasse(e.target.value)}
-            />
-          </div>
-          <div className="field">
-            <label>Identifiant transporteur</label>
-            <input
-              value={transporteurId}
-              onChange={(e) => setTransporteurId(e.target.value)}
-              placeholder="Obligatoire pour un compte transporteur"
             />
           </div>
           <button className="button button-primary" type="submit" disabled={loading}>

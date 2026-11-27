@@ -1,11 +1,11 @@
 "use client";
 
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Network } from "@capacitor/network";
 import { calculateFare } from "../../../shared/fare.js";
 import { formatGnf } from "../../../shared/admin-utils.js";
-import { apiRequest, clearSession, getSession, setSession } from "../../services/api.js";
+import { apiRequest, clearSession, getSession } from "../../services/api.js";
 import { getReceiverStore } from "../../features/receiver/sqlite-receiver-store.js";
 import { printerService } from "../../features/receiver/printer/printer-service.js";
 
@@ -13,7 +13,6 @@ type Stop = { id: string; nom: string; position: number };
 type ReceiverSession = {
   utilisateur: { id: string; nom: string; login: string; role: string; transporteurId: string | null };
   accessToken: string;
-  refreshToken: string;
 };
 type Configuration = {
   lastBoardingStopId?: string;
@@ -111,15 +110,13 @@ function printableTicket(sale: StoredSale["data"], configuration: Configuration)
 }
 
 export default function ReceiverPage() {
+  const router = useRouter();
   const [session, setCurrentSession] = useState<ReceiverSession | null>(null);
   const [store, setStore] = useState<ReceiverStore | null>(null);
   const [config, setConfig] = useState<Configuration | null>(null);
   const [services, setServices] = useState<Array<Configuration["service"]>>([]);
   const [sales, setSales] = useState<StoredSale[]>([]);
   const [screen, setScreen] = useState<"dashboard" | "sale" | "history">("dashboard");
-  const [login, setLogin] = useState("");
-  const [password, setPassword] = useState("");
-  const [carrierId, setCarrierId] = useState("");
   const [boardingId, setBoardingId] = useState("");
   const [destinationId, setDestinationId] = useState("");
   const [preview, setPreview] = useState(false);
@@ -143,6 +140,7 @@ export default function ReceiverPage() {
   const [paperWidthMm, setPaperWidthMm] = useState<58 | 80>(58);
   const [printerBusy, setPrinterBusy] = useState(false);
   const [printerError, setPrinterError] = useState("");
+  const [finishConfirm, setFinishConfirm] = useState<{ message: string; unsynced: number } | null>(null);
   const syncRef = useRef<() => void>(() => {});
 
   const stops = useMemo(() => config?.service.ligne.reperes ?? [], [config]);
@@ -205,6 +203,7 @@ export default function ReceiverPage() {
         const savedSession = getSession() as ReceiverSession | null;
         if (savedSession?.utilisateur.role === "RECEVEUR") {
           setCurrentSession(savedSession);
+          void loadServices();
           const cachedConfigs = await receiverStore.listConfigurations() as Configuration[];
           const activeConfig = cachedConfigs.find((item) => item.service.statut === "OUVERT");
           if (activeConfig) {
@@ -217,6 +216,10 @@ export default function ReceiverPage() {
           const status = await Network.getStatus();
           setOnline(status.connected);
           if (status.connected) syncRef.current();
+        } else {
+          // La connexion se fait désormais sur la page partagée (voir app/page.tsx).
+          router.push("/");
+          return;
         }
       } catch (initializationError) {
         setError(initializationError instanceof Error
@@ -250,39 +253,6 @@ export default function ReceiverPage() {
       void networkListener?.remove();
     };
   }, []);
-
-  async function signIn(event: React.FormEvent) {
-    event.preventDefault();
-    setLoading(true);
-    setError("");
-    try {
-      const result = await apiRequest<ReceiverSession>("/auth/login", {
-        method: "POST",
-        body: { login, motDePasse: password, ...(carrierId ? { transporteurId: carrierId } : {}) },
-      });
-      if (result.utilisateur.role !== "RECEVEUR") {
-        throw new Error("Ce compte n’est pas un compte receveur.");
-      }
-      setSession(result);
-      setCurrentSession(result);
-      setPassword("");
-      setNotice("Connecté. Sélectionnez votre service pour télécharger sa configuration.");
-      const response = await apiRequest<{ services: Array<Configuration["service"]> }>("/services");
-      setServices(response.services.filter((service) => service.statut === "OUVERT"));
-      setError("");
-      try {
-        const status = await Network.getStatus();
-        setOnline(status.connected);
-        if (status.connected) syncRef.current();
-      } catch (networkError) {
-        setError(networkError instanceof Error ? networkError.message : "État du réseau indisponible.");
-      }
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Connexion impossible.");
-    } finally {
-      setLoading(false);
-    }
-  }
 
   async function loadServices() {
     setLoading(true);
@@ -485,17 +455,24 @@ export default function ReceiverPage() {
     const receiverStore = store;
     if (!config || !receiverStore) return;
     const unsynced = await receiverStore.countUnsyncedSales(config.service.id);
-    const warning = unsynced
+    const message = unsynced
       ? `Il reste ${unsynced} vente(s) non synchronisée(s). Terminer le service quand même ?`
       : "Terminer ce service ?";
-    if (!window.confirm(warning)) return;
+    setFinishConfirm({ message, unsynced });
+  }
+
+  async function confirmFinishService() {
+    const receiverStore = store;
+    const pending = finishConfirm;
+    setFinishConfirm(null);
+    if (!config || !receiverStore || !pending) return;
     setLoading(true);
     try {
       await apiRequest(`/services/${config.service.id}`, { method: "PATCH", body: { statut: "TERMINE" } });
       const finished = { ...config, service: { ...config.service, statut: "TERMINE" as const } };
       await receiverStore.saveConfiguration(finished);
       setConfig(null);
-      setNotice(unsynced
+      setNotice(pending.unsynced
         ? "Service terminé. Les ventes non synchronisées sont conservées sur l’appareil."
         : "Service terminé.");
       await loadServices();
@@ -509,7 +486,7 @@ export default function ReceiverPage() {
   async function signOut() {
     try {
       const current = getSession() as ReceiverSession | null;
-      if (current) await apiRequest("/auth/logout", { method: "POST", body: { refreshToken: current.refreshToken } });
+      if (current) await apiRequest("/auth/logout", { method: "POST" });
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Déconnexion serveur impossible.");
     } finally {
@@ -517,6 +494,7 @@ export default function ReceiverPage() {
       setCurrentSession(null);
       setConfig(null);
       setSales([]);
+      router.push("/");
     }
   }
 
@@ -537,26 +515,7 @@ export default function ReceiverPage() {
     return summary;
   }, {});
 
-  if (!session) {
-    return (
-      <main className="receiver-screen">
-        <section className="receiver-card receiver-login">
-          <div className="brand-mark">GB</div>
-          <p className="eyebrow">ESPACE RECEVEUR</p>
-          <h1>Connexion</h1>
-          <p className="muted">Connectez-vous avant le départ pour charger le service et sa configuration hors ligne.</p>
-          {error && <div className="receiver-alert" role="alert">{error}</div>}
-          <form className="form-stack" onSubmit={signIn}>
-            <label className="field">Identifiant<input autoComplete="username" required value={login} onChange={(event) => setLogin(event.target.value)} /></label>
-            <label className="field">Mot de passe<input type="password" autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} /></label>
-            <label className="field">Identifiant transporteur<input value={carrierId} onChange={(event) => setCarrierId(event.target.value)} placeholder="Requis pour un compte transporteur" /></label>
-            <button className="button button-primary receiver-main-action" disabled={loading || !store}>{loading ? "Connexion…" : store ? "Se connecter" : "Initialisation…"}</button>
-          </form>
-          <Link className="receiver-link" href="/">Administration</Link>
-        </section>
-      </main>
-    );
-  }
+  if (!session) return <main className="loading-screen">Chargement…</main>;
 
   return (
     <main className="receiver-screen">
@@ -724,11 +683,23 @@ export default function ReceiverPage() {
 
             <section className="receiver-card receiver-end-service">
               <h2>Fin de service</h2>
-              <p>{currentSales.length} ticket(s) · {formatGnf(currentSales.reduce((sum, sale) => sum + sale.data.montantGnf, 0))} · {unsyncedCount} vente(s) non synchronisée(s)</p>
+              <p>{currentSales.length} ticket(s) · {formatGnf(currentSales
+                .filter((sale) => sale.status !== "REJECTED")
+                .reduce((sum, sale) => sum + sale.data.montantGnf, 0))} · {unsyncedCount} vente(s) non synchronisée(s)</p>
               <p>Tronçons : {Object.keys(segmentsSummary).length
                 ? Object.entries(segmentsSummary).sort(([left], [right]) => Number(left) - Number(right)).map(([segments, count]) => `${segments} tronçon(s) : ${count}`).join(" · ")
                 : "aucune vente"}</p>
-              <button className="button button-danger receiver-main-action" onClick={() => void finishService()} disabled={loading}>Terminer le service</button>
+              {finishConfirm ? (
+                <div className="receiver-alert" role="alertdialog" aria-modal="true">
+                  <p>{finishConfirm.message}</p>
+                  <div className="receiver-actions">
+                    <button className="button button-quiet" onClick={() => setFinishConfirm(null)}>Annuler</button>
+                    <button className="button button-danger" onClick={() => void confirmFinishService()} disabled={loading}>Confirmer</button>
+                  </div>
+                </div>
+              ) : (
+                <button className="button button-danger receiver-main-action" onClick={() => void finishService()} disabled={loading}>Terminer le service</button>
+              )}
             </section>
             <button className="receiver-link receiver-logout" onClick={() => void signOut()}>Se déconnecter</button>
           </>

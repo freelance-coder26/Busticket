@@ -19,3 +19,8 @@ test("ne renseigne la période courante que pour les rapports qui le demandent",
   const today = new Date().toISOString().slice(0, 10);
   assert.equal(parseDateRange({}, { defaultToToday: true }).from, today);
 });
+
+test("refuse une période de plus de 366 jours pour éviter une requête non bornée", () => {
+  assert.equal(parseDateRange({ du: "2020-01-01", au: "2030-01-01" }), null);
+  assert.ok(parseDateRange({ du: "2026-01-01", au: "2026-12-31" }));
+});

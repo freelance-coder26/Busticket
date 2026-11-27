@@ -21,7 +21,7 @@ npm test
 npm start
 ```
 
-Depuis `front/` :
+Depuis `frontend/` :
 
 ```powershell
 npm ci
@@ -29,14 +29,14 @@ $env:NEXT_PUBLIC_API_URL = "http://localhost:3001/api"
 npm run build
 ```
 
-Le frontend est exporté statiquement dans `front/out/`. Servir ce répertoire depuis un hébergement web statique et configurer `WEB_ORIGIN` avec son origine exacte. L'API est un processus Node séparé; mettre un proxy inverse HTTPS devant elle et ne pas exposer PostgreSQL sur Internet.
+Le frontend est exporté statiquement dans `frontend/out/`. Servir ce répertoire depuis un hébergement web statique et configurer `WEB_ORIGIN` avec son origine exacte. L'API est un processus Node séparé; mettre un proxy inverse HTTPS devant elle et ne pas exposer PostgreSQL sur Internet.
 
 ## Déploiement
 
 1. Préparer PostgreSQL et fournir les secrets via le gestionnaire de secrets de la plateforme (pas dans Git, une image ou les journaux).
 2. Installer les dépendances verrouillées avec `npm ci`, générer Prisma (`npm run db:generate`) et appliquer uniquement les migrations versionnées avec `npm run db:deploy`.
 3. Déployer l'API derrière HTTPS et définir `DATABASE_URL`, `JWT_ACCESS_SECRET` aléatoire, `WEB_ORIGIN` et les paramètres métier nécessaires.
-4. Construire le frontend avec `NEXT_PUBLIC_API_URL` pointant sur l'API HTTPS publique, puis publier `front/out/`.
+4. Construire le frontend avec `NEXT_PUBLIC_API_URL` pointant sur l'API HTTPS publique, puis publier `frontend/out/`.
 5. Pour Android, reconstruire l'APK après avoir défini l'URL API de production; ne pas utiliser `localhost` sur un appareil physique.
 6. Vérifier `/api/health`, la connexion, la lecture de ressources, un rapport et une exportation avant ouverture aux utilisateurs.
 

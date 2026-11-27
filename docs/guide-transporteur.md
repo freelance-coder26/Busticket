@@ -1,6 +1,6 @@
 # Guide d'utilisation — transporteur
 
-L'administration web est accessible à l'URL de l'application, généralement `/`. Utiliser un compte transporteur et son identifiant de tenant pour se connecter. Les menus dépendent du rôle, et les autorisations sont aussi vérifiées côté API.
+L'administration web est accessible à l'URL de l'application, généralement `/`. Se connecter avec son identifiant et son mot de passe habituels : chaque identifiant est unique sur toute la plateforme, aucune information de transporteur n'est à saisir. Les menus dépendent du rôle, et les autorisations sont aussi vérifiées côté API.
 
 ## Mise en service
 

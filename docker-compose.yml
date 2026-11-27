@@ -1,0 +1,35 @@
+# Pour le développement et le staging uniquement (voir docs/deploiement-et-sauvegardes.md pour la production).
+# JWT_ACCESS_SECRET peut être surchargé par un fichier .env à la racine, lu automatiquement par docker compose.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: busticket
+      POSTGRES_PASSWORD: busticket
+      POSTGRES_DB: busticket
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U busticket"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: ./backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://busticket:busticket@postgres:5432/busticket
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-changez-cette-cle-en-developpement-local-32}
+      WEB_ORIGIN: http://localhost:3000
+      PORT: 3001
+    ports:
+      - "3001:3001"
+    command: sh -c "npx prisma migrate deploy && node server.js"
+
+volumes:
+  postgres-data:

@@ -1,12 +1,13 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { clearSession, getSession, setSession } from "../services/api.js";
+import { useRouter } from "next/navigation";
+import { clearSession, getSession } from "../services/api.js";
 import { formatDate, formatGnf, pagesForRole, translateApiError, validateStops } from "../../shared/admin-utils.js";
-import { getSaleDetail, loadAdminPage, login, logout as logoutApi, runAdminAction } from "../features/admin/admin.api";
+import { getSaleDetail, loadAdminPage, logout as logoutApi, runAdminAction } from "../features/admin/admin.api";
 import AdminFeaturePages from "../features/admin/AdminFeaturePages";
 import Dashboard from "../features/admin/dashboard/Dashboard";
-import { Button, Field } from "../features/admin/admin-ui";
+import { Button, ConfirmDialog, PromptDialog, type ConfirmRequest, type PromptRequest } from "../features/admin/admin-ui";
 import type { Account, Bus, Carrier, Data, Device, Line, Report, Sale, SaleDetail, Service, Session, Stop, Tariff } from "../features/admin/types";
 
 const today = new Date().toISOString().slice(0, 10);
@@ -24,6 +25,7 @@ function getErrorMessage(error: unknown) {
 }
 
 export default function AdminApp() {
+  const router = useRouter();
   const [session, setCurrentSession] = useState<Session | null>(null);
   const [ready, setReady] = useState(false);
   const [selectedPage, setSelectedPage] = useState("");
@@ -49,7 +51,15 @@ export default function AdminApp() {
   const [salesReceiverId, setSalesReceiverId] = useState("");
   const [salesStatus, setSalesStatus] = useState("");
   const [saleDetail, setSaleDetail] = useState<SaleDetail | null>(null);
-  const [loginValues, setLoginValues] = useState({ login: "", motDePasse: "", transporteurId: "" });
+  const [confirmRequest, setConfirmRequest] = useState<ConfirmRequest | null>(null);
+  const [promptRequest, setPromptRequest] = useState<PromptRequest | null>(null);
+
+  function requestConfirm(message: string, onConfirm: () => void) {
+    setConfirmRequest({ message, onConfirm });
+  }
+  function requestPrompt(message: string, onSubmit: (value: string) => void, inputType?: "text" | "password") {
+    setPromptRequest({ message, onSubmit, inputType });
+  }
 
   const pages = useMemo(() => pagesForRole(session?.utilisateur.role ?? ""), [session]);
   const user = session?.utilisateur;
@@ -91,6 +101,11 @@ export default function AdminApp() {
           setCurrentSession(saved);
           const firstPage = pagesForRole(saved.utilisateur.role)[0]?.id ?? "";
           setSelectedPage(firstPage);
+        } else {
+          // La connexion se fait maintenant sur une page dédiée, partagée par tous les rôles
+          // sauf l'administrateur plateforme (voir app/page.tsx et app/plateforme/page.tsx).
+          router.push("/");
+          return;
         }
       } catch (sessionError) {
         setError(getErrorMessage(sessionError));
@@ -99,6 +114,7 @@ export default function AdminApp() {
       }
     }, 0);
     return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -109,40 +125,18 @@ export default function AdminApp() {
 
   const setValue = (key: string, value: string) => setForm((current) => ({ ...current, [key]: value }));
 
-  async function submitLogin(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setLoading(true);
-    setError("");
-    try {
-      const result = await login({
-        login: loginValues.login,
-        motDePasse: loginValues.motDePasse,
-        ...(loginValues.transporteurId.trim() ? { transporteurId: loginValues.transporteurId.trim() } : {}),
-      });
-      setSession(result);
-      setCurrentSession(result);
-      const firstPage = pagesForRole(result.utilisateur.role)[0]?.id ?? "";
-      setSelectedPage(firstPage);
-      setData({});
-      setNotice("");
-      setLoginValues({ login: "", motDePasse: "", transporteurId: "" });
-    } catch (requestError) {
-      setError(getErrorMessage(requestError));
-    } finally {
-      setLoading(false);
-    }
-  }
-
   async function logout() {
     setError("");
     try {
-      await logoutApi(session?.refreshToken);
+      await logoutApi();
+    } catch (requestError) {
+      setError(getErrorMessage(requestError));
+    } finally {
       clearSession();
       setCurrentSession(null);
       setData({});
       setSelectedPage("");
-    } catch (requestError) {
-      setError(getErrorMessage(requestError));
+      router.push("/");
     }
   }
 
@@ -198,13 +192,14 @@ export default function AdminApp() {
         ? { versementAttenduGnf: Number(form.versementAttenduGnf) }
         : { versementAttenduGnf: null }),
     };
-    if (editingBus && !window.confirm("Confirmer la modification de ce bus ?")) return;
-    await runAction(
+    const submit = () => runAction(
       editingBus ? `/bus/${editingBus.id}` : "/bus",
       editingBus ? "PATCH" : "POST",
       body,
       editingBus ? "Bus modifié." : "Bus créé.",
     );
+    if (editingBus) requestConfirm("Confirmer la modification de ce bus ?", () => void submit());
+    else await submit();
   }
 
   async function handleLineSubmit(event: FormEvent<HTMLFormElement>) {
@@ -220,13 +215,14 @@ export default function AdminApp() {
       return;
     }
     const normalizedStops = stops.map((stop) => ({ nom: stop.nom.trim(), position: Number(stop.position) }));
-    if (editingLine && !window.confirm("Confirmer la modification de la ligne et de ses repères ?")) return;
-    await runAction(
+    const submit = () => runAction(
       editingLine ? `/lignes/${editingLine.id}` : "/lignes",
       editingLine ? "PATCH" : "POST",
       { nom: form.nom.trim(), reperes: normalizedStops },
       editingLine ? "Ligne modifiée." : "Ligne créée.",
     );
+    if (editingLine) requestConfirm("Confirmer la modification de la ligne et de ses repères ?", () => void submit());
+    else await submit();
   }
 
   function validateNetwork() {
@@ -253,8 +249,10 @@ export default function AdminApp() {
       setError("Saisissez un montant GNF positif et une date d’effet valide.");
       return;
     }
-    if (!window.confirm(`Confirmer le nouveau tarif de ${formatGnf(amount)} à partir du ${formatDate(effectiveDate, { dateStyle: "long" })} ?`)) return;
-    await runAction("/tarifs", "POST", { montantGnf: amount, dateEffet: effectiveDate.toISOString() }, "Nouveau tarif enregistré avec son historique.");
+    requestConfirm(
+      `Confirmer le nouveau tarif de ${formatGnf(amount)} à partir du ${formatDate(effectiveDate, { dateStyle: "long" })} ?`,
+      () => void runAction("/tarifs", "POST", { montantGnf: amount, dateEffet: effectiveDate.toISOString() }, "Nouveau tarif enregistré avec son historique."),
+    );
   }
 
   async function handleUserSubmit(event: FormEvent<HTMLFormElement>) {
@@ -275,13 +273,14 @@ export default function AdminApp() {
       receveurId: form.receveurId || null,
       ...(!editingDevice ? { prefixeTicket: form.prefixeTicket?.trim().toUpperCase() } : {}),
     };
-    if (editingDevice && !window.confirm(`Confirmer la modification de ${editingDevice.nom} ?`)) return;
-    await runAction(
+    const submit = () => runAction(
       editingDevice ? `/appareils/${editingDevice.id}` : "/appareils",
       editingDevice ? "PATCH" : "POST",
       body,
       editingDevice ? "Appareil modifié." : "Appareil créé.",
     );
+    if (editingDevice) requestConfirm(`Confirmer la modification de ${editingDevice.nom} ?`, () => void submit());
+    else await submit();
   }
 
   async function handleServiceSubmit(event: FormEvent<HTMLFormElement>) {
@@ -305,28 +304,7 @@ export default function AdminApp() {
     }, "Transporteur créé.");
   }
 
-  if (!ready) return <main className="loading-screen">Chargement…</main>;
-  if (!session) {
-    return (
-      <main className="login-screen">
-        <div className="login-decoration" aria-hidden="true" />
-        <section className="login-card">
-          <div className="brand-mark">G</div>
-          <p className="eyebrow">GOROHITECH · BILLETTERIE</p>
-          <h1>Votre espace de gestion</h1>
-          <p className="muted">Connectez-vous pour suivre vos bus, vos ventes et vos recettes.</p>
-          {error && <div className="alert alert-error" role="alert">{error}</div>}
-          <form className="form-stack" onSubmit={submitLogin}>
-            <Field label="Identifiant" autoComplete="username" value={loginValues.login} onChange={(event) => setLoginValues({ ...loginValues, login: event.target.value })} required />
-            <Field label="Mot de passe" type="password" autoComplete="current-password" value={loginValues.motDePasse} onChange={(event) => setLoginValues({ ...loginValues, motDePasse: event.target.value })} required />
-            <Field label="Identifiant transporteur (pour un compte transporteur)" value={loginValues.transporteurId} onChange={(event) => setLoginValues({ ...loginValues, transporteurId: event.target.value })} />
-            <Button type="submit" disabled={loading}>{loading ? "Connexion…" : "Se connecter"} <span aria-hidden="true">→</span></Button>
-          </form>
-          <p className="login-footnote">La sécurité des accès est vérifiée par le serveur.</p>
-        </section>
-      </main>
-    );
-  }
+  if (!ready || !session) return <main className="loading-screen">Chargement…</main>;
 
   if (!pages.length) {
     return (
@@ -421,6 +399,8 @@ export default function AdminApp() {
             loading={loading}
             runAction={runAction}
             setError={setError}
+            requestConfirm={requestConfirm}
+            requestPrompt={requestPrompt}
             busRows={busRows}
             lineRows={lineRows}
             tariffRows={tariffRows}
@@ -476,6 +456,8 @@ export default function AdminApp() {
             setSaleDetail={setSaleDetail}
             showSaleDetail={(id) => { void showSaleDetail(id); }}
           />
+          <ConfirmDialog request={confirmRequest} onClose={() => setConfirmRequest(null)} />
+          <PromptDialog request={promptRequest} onClose={() => setPromptRequest(null)} />
         </div>
         <footer className="page-footer"><span>Gorohitech · Billetterie de bus</span><span>Interface d’administration · Accès protégé</span></footer>
       </main>
